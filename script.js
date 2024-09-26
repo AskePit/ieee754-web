@@ -20,18 +20,83 @@ const mantissaBits = document.getElementsByClassName('mantissa-bit')
 
 const normalizedLabel = document.getElementById('normalized-section')
 
+// dec edit
+decInputField.oninput = () => {
+    let filtered = ''
+    for(let c of decInputField.value) {
+        if (c >= '0' && c <= '9') {
+            filtered += c
+        } else if (c == '.' || c == ',') {
+            filtered += c
+        }
+    }
+
+    decInputField.value = filtered
+}
+
+// dec submit
 decInputField.onchange = () => {
+    if (decInputField.value != 'NaN' && decInputField.value != 'Infinity') {
+        if (decInputField.value.length == 0) {
+            decInputField.value = "0"
+        }
+        if(decInputField.value.includes(',')) {
+            decInputField.value.replace(',', '.')
+        }
+        if (!decInputField.value.includes('.')) {
+            decInputField.value += '.0'
+        }
+    }
     SetDataFromDec()
 }
 
 for(let binInputField of binInputFields) {
+    // bin edit
+    binInputField.oninput = () => {
+        let filtered = ''
+        for(let i = 0; i<4; ++i) {
+            const c = binInputField.value[i]
+            if (c >= '0' && c <= '1') {
+                filtered += c
+            }
+        }
+    
+        binInputField.value = filtered
+    }
+
+    // bin submit
     binInputField.onchange = () => {
+        if (binInputField.value.length < 4) {
+            binInputField.value = '0'.repeat(4 - binInputField.value.length) + binInputField.value
+        }
         SetDataFromBin()
     }
 }
 
 for(let hexInputField of hexInputFields) {
+    // hex edit
+    hexInputField.oninput = () => {
+        let filtered = ''
+        for(let i = 0; i<4; ++i) {
+            const c = hexInputField.value[i]
+            if (c >= '0' && c <= '9') {
+                filtered += c
+            } else if (c >= 'A' && c <= 'F') {
+                filtered += c
+            } else if (c >= 'a' && c <= 'f') {
+                filtered += c
+            }
+        }
+
+        hexInputField.value = filtered
+    }
+
+    // hex submit
     hexInputField.onchange = () => {
+        if (hexInputField.value.length < 4) {
+            hexInputField.value = '0'.repeat(4 - hexInputField.value.length) + hexInputField.value
+        }
+        hexInputField.value = hexInputField.value.toUpperCase()
         SetDataFromHex()
     }
 }
@@ -128,7 +193,7 @@ function SetBitsToHex(bits) {
     let hex = bin2hex(bits)
 
     for (let i = 0; i<2; ++i) {
-        hexInputFields[i].value = hex.slice(i*4, i*4 + 4)
+        hexInputFields[i].value = hex.slice(i*4, i*4 + 4).toUpperCase()
     }
 }
 
@@ -137,7 +202,13 @@ function GetBitsFromDec() {
 }
 
 function SetBitsToDec(bits) {
-    decInputField.value = binary_to_float32(bits)
+    let val = binary_to_float32(bits).toString()
+    if (val != 'NaN' && val != 'Infinity') {
+        if (!val.includes('.') && !val.includes(',')) {
+            val += '.0'
+        }
+    }
+    decInputField.value = val
 }
 
 function hex2bin(hex) {
@@ -206,3 +277,5 @@ function SetInf() {
 function SetNan() {
     SetAllData('01111111110000000000000000000000')
 }
+
+SetAllData('00111111100000000000000000000000')
