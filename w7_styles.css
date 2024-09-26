@@ -16,6 +16,7 @@ sup {
 input[type="checkbox"] {
     accent-color: #005FB8;
     border-color: #626262;
+    cursor: pointer;
 }
 
 input[type="text"] {
@@ -74,6 +75,7 @@ button {
     border: var(--border);
     border-radius: var(--border-radius);
     color: #1E395B;
+    cursor: pointer;
 }
 
 .usual-button {

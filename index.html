@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="w7_styles.css">
     <link rel="stylesheet" href="ieee754_styles.css">
     <script type="module">
-        import init, { float32_to_binary, binary_to_float32 } from './backend/pkg/ieee754_web.js';
+        import init, { float32_to_binary, binary_to_float32 } from './ieee754_web.js';
         
         async function run() {
             await init();
@@ -28,34 +28,34 @@
         <div id="upper-flow">
             <div id="input-fields-flow">
                 <div id="input-fields-row-flow">
-                    <input type="text">
+                    <input id="dec-input-field" type="text" value="1.0">
                 </div>
                 <div id="input-fields-row-flow">
-                    <input type="text">
-                    <input type="text">
-                    <input type="text">
-                    <input type="text">
-                    <input type="text">
-                    <input type="text">
-                    <input type="text">
-                    <input type="text">
+                    <input id="bin-input-field-0" type="text" value="0011">
+                    <input id="bin-input-field-1" type="text" value="1111">
+                    <input id="bin-input-field-2" type="text" value="1000">
+                    <input id="bin-input-field-3" type="text" value="0000">
+                    <input id="bin-input-field-4" type="text" value="0000">
+                    <input id="bin-input-field-5" type="text" value="0000">
+                    <input id="bin-input-field-6" type="text" value="0000">
+                    <input id="bin-input-field-7" type="text" value="0000">
                 </div>
                 <div id="input-fields-row-flow">
-                    <input type="text">
-                    <input type="text">
+                    <input id="hex-input-field-0" type="text" value="3F80">
+                    <input id="hex-input-field-1" type="text" value="0000">
                 </div>
             </div>
             <div id="copy-buttons-flow">
-                <button class="usual-button" style="width: 24px; height: 24px;"></button>
-                <button class="usual-button" style="width: 24px; height: 24px;"></button>
-                <button class="usual-button" style="width: 24px; height: 24px;"></button>
+                <button id="button-copy-dec" class="usual-button" style="width: 24px; height: 24px;"></button>
+                <button id="button-copy-bin" class="usual-button" style="width: 24px; height: 24px;"></button>
+                <button id="button-copy-hex" class="usual-button" style="width: 24px; height: 24px;"></button>
             </div>
             <div class="buttons-group">
                 <label class="buttons-group-name">Special</label>
                 <div class="buttons-col">
-                    <button class="usual-button" style="width: 50px; height: 20px;">0</button>
-                    <button class="usual-button" style="width: 50px; height: 20px;">Inf</button>
-                    <button class="usual-button" style="width: 50px; height: 20px;">NaN</button>
+                    <button id="button-zero" class="usual-button" style="width: 50px; height: 20px;">0</button>
+                    <button id="button-inf" class="usual-button" style="width: 50px; height: 20px;">Inf</button>
+                    <button id="button-nan" class="usual-button" style="width: 50px; height: 20px;">NaN</button>
                 </div>
             </div>
         </div>
@@ -63,50 +63,50 @@
             <div class="checkboxes-group">
                 <label class="checkboxes-group-name">Sign</label>
                 <div class="checkboxes-row">
-                    <input type="checkbox">
+                    <input id="sign-bit" type="checkbox">
                 </div>
                 <label class="checkboxes-group-text">-</label>
             </div>
             <div class="checkboxes-group">
                 <label class="checkboxes-group-name">Exponent</label>
                 <div class="checkboxes-row">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
+                    <input id="exponent-bit-7" type="checkbox">
+                    <input id="exponent-bit-6" type="checkbox">
+                    <input id="exponent-bit-5" type="checkbox">
+                    <input id="exponent-bit-4" type="checkbox">
+                    <input id="exponent-bit-3" type="checkbox">
+                    <input id="exponent-bit-2" type="checkbox">
+                    <input id="exponent-bit-1" type="checkbox">
+                    <input id="exponent-bit-0" type="checkbox">
                 </div>
                 <label class="checkboxes-group-text">2<sup>2</sup></label>
             </div>
             <div class="checkboxes-group">
                 <label class="checkboxes-group-name">Mantissa</label>
                 <div class="checkboxes-row">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
-                    <input type="checkbox">
+                    <input id="mantissa-bit-22" type="checkbox">
+                    <input id="mantissa-bit-21" type="checkbox">
+                    <input id="mantissa-bit-20" type="checkbox">
+                    <input id="mantissa-bit-19" type="checkbox">
+                    <input id="mantissa-bit-18" type="checkbox">
+                    <input id="mantissa-bit-17" type="checkbox">
+                    <input id="mantissa-bit-16" type="checkbox">
+                    <input id="mantissa-bit-15" type="checkbox">
+                    <input id="mantissa-bit-14" type="checkbox">
+                    <input id="mantissa-bit-13" type="checkbox">
+                    <input id="mantissa-bit-12" type="checkbox">
+                    <input id="mantissa-bit-11" type="checkbox">
+                    <input id="mantissa-bit-10" type="checkbox">
+                    <input id="mantissa-bit-9" type="checkbox">
+                    <input id="mantissa-bit-8" type="checkbox">
+                    <input id="mantissa-bit-7" type="checkbox">
+                    <input id="mantissa-bit-6" type="checkbox">
+                    <input id="mantissa-bit-5" type="checkbox">
+                    <input id="mantissa-bit-4" type="checkbox">
+                    <input id="mantissa-bit-3" type="checkbox">
+                    <input id="mantissa-bit-2" type="checkbox">
+                    <input id="mantissa-bit-1" type="checkbox">
+                    <input id="mantissa-bit-0" type="checkbox">
                 </div>
                 <label class="checkboxes-group-text">1.5</label>
             </div>
