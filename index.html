@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <title>IEEE 754</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <link rel="stylesheet" href="w7_styles.css">
+    <link rel="stylesheet" href="ieee754_styles.css">
+    <script type="module">
+        import init, { float32_to_binary, binary_to_float32 } from './backend/pkg/ieee754_web.js';
+        
+        async function run() {
+            await init();
+        
+            const float = "1.0";
+            const binary = float32_to_binary(float);
+            console.log(`Float ${float} to binary: ${binary}`);
+        
+            const reversed = binary_to_float32(binary);
+            console.log(`Binary ${binary} to float: ${reversed}`);
+        }
+        
+        run();
+    </script>
+</head>
+<body>
+    <div id="main-flow">
+        <div id="upper-flow">
+            <div id="input-fields-flow">
+                <div id="input-fields-row-flow">
+                    <input type="text">
+                </div>
+                <div id="input-fields-row-flow">
+                    <input type="text">
+                    <input type="text">
+                    <input type="text">
+                    <input type="text">
+                    <input type="text">
+                    <input type="text">
+                    <input type="text">
+                    <input type="text">
+                </div>
+                <div id="input-fields-row-flow">
+                    <input type="text">
+                    <input type="text">
+                </div>
+            </div>
+            <div id="copy-buttons-flow">
+                <button class="usual-button" style="width: 24px; height: 24px;"></button>
+                <button class="usual-button" style="width: 24px; height: 24px;"></button>
+                <button class="usual-button" style="width: 24px; height: 24px;"></button>
+            </div>
+            <div class="buttons-group">
+                <label class="buttons-group-name">Special</label>
+                <div class="buttons-col">
+                    <button class="usual-button" style="width: 50px; height: 20px;">0</button>
+                    <button class="usual-button" style="width: 50px; height: 20px;">Inf</button>
+                    <button class="usual-button" style="width: 50px; height: 20px;">NaN</button>
+                </div>
+            </div>
+        </div>
+        <div id="bits-flow">
+            <div class="checkboxes-group">
+                <label class="checkboxes-group-name">Sign</label>
+                <div class="checkboxes-row">
+                    <input type="checkbox">
+                </div>
+                <label class="checkboxes-group-text">-</label>
+            </div>
+            <div class="checkboxes-group">
+                <label class="checkboxes-group-name">Exponent</label>
+                <div class="checkboxes-row">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                </div>
+                <label class="checkboxes-group-text">2<sup>2</sup></label>
+            </div>
+            <div class="checkboxes-group">
+                <label class="checkboxes-group-name">Mantissa</label>
+                <div class="checkboxes-row">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                    <input type="checkbox">
+                </div>
+                <label class="checkboxes-group-text">1.5</label>
+            </div>
+        </div>
+        <div id="normalized-section">
+            <i>normalized</ii>
+        </div>
+    </div>
+</body>
+</html>
+
