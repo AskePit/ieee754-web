@@ -102,12 +102,15 @@ for(let hexInputField of hexInputFields) {
 }
 
 copyDecButton.onclick = () => {
+    navigator.clipboard.writeText(decInputField.value)
 }
 
 copyBinButton.onclick = () => {
+    navigator.clipboard.writeText(GetBitsFromBin())
 }
 
 copyHexButton.onclick = () => {
+    navigator.clipboard.writeText(hexInputFields[0].value + hexInputFields[1].value)
 }
 
 zeroButton.onclick = () => {
