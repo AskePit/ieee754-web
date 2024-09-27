@@ -18,6 +18,10 @@ const signBit = document.getElementById('sign-bit')
 const exponentBits = document.getElementsByClassName('exponent-bit')
 const mantissaBits = document.getElementsByClassName('mantissa-bit')
 
+const signBitText = document.getElementById('sign-bit-text')
+const exponentBitsText = document.getElementById('exponent-bits-text')
+const mantissaBitsText = document.getElementById('mantissa-bits-text')
+
 const normalizedLabel = document.getElementById('normalized-section')
 
 // dec edit
@@ -26,7 +30,7 @@ decInputField.oninput = () => {
     for(let c of decInputField.value) {
         if (c >= '0' && c <= '9') {
             filtered += c
-        } else if (c == '.' || c == ',') {
+        } else if (c == '.' || c == ',' || c == '-') {
             filtered += c
         }
     }
@@ -36,7 +40,7 @@ decInputField.oninput = () => {
 
 // dec submit
 decInputField.onchange = () => {
-    if (decInputField.value != 'NaN' && decInputField.value != 'Infinity') {
+    if (!decInputField.value.includes('NaN') && !decInputField.value.includes('Infinity')) {
         if (decInputField.value.length == 0) {
             decInputField.value = "0"
         }
@@ -171,6 +175,12 @@ function SetBitsToCheckboxes(bits) {
     }
 }
 
+function SetBitsToLabels(bits) {
+    signBitText.innerHTML = bits[0] == '1' ? '-' : '+'
+
+    // TODO exponent and mantissa labels
+}
+
 function GetBitsFromBin() {
     let bits = ''
 
@@ -206,7 +216,7 @@ function GetBitsFromDec() {
 
 function SetBitsToDec(bits) {
     let val = binary_to_float32(bits).toString()
-    if (val != 'NaN' && val != 'Infinity') {
+    if (!val.includes('NaN') && !val.includes('Infinity')) {
         if (!val.includes('.') && !val.includes(',')) {
             val += '.0'
         }
@@ -233,7 +243,8 @@ function SetAllData(bits) {
         SetBitsToDec,
         SetBitsToBin,
         SetBitsToHex,
-        SetBitsToCheckboxes
+        SetBitsToCheckboxes,
+        SetBitsToLabels
     ])
 }
 
@@ -241,7 +252,8 @@ function SetDataFromCheckboxes() {
     SetData(GetBitsFromCheckboxes(), [
         SetBitsToDec,
         SetBitsToHex,
-        SetBitsToBin
+        SetBitsToBin,
+        SetBitsToLabels
     ])
 }
 
@@ -249,7 +261,8 @@ function SetDataFromDec() {
     SetData(GetBitsFromDec(), [
         SetBitsToHex,
         SetBitsToBin,
-        SetBitsToCheckboxes
+        SetBitsToCheckboxes,
+        SetBitsToLabels
     ])
 }
 
@@ -257,7 +270,8 @@ function SetDataFromBin() {
     SetData(GetBitsFromBin(), [
         SetBitsToDec,
         SetBitsToHex,
-        SetBitsToCheckboxes
+        SetBitsToCheckboxes,
+        SetBitsToLabels
     ])
 }
 
@@ -265,7 +279,8 @@ function SetDataFromHex() {
     SetData(GetBitsFromHex(), [
         SetBitsToDec,
         SetBitsToBin,
-        SetBitsToCheckboxes
+        SetBitsToCheckboxes,
+        SetBitsToLabels
     ])
 }
 
