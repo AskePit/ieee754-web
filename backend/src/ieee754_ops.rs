@@ -1,4 +1,4 @@
-use crate::bitfield::BitField;
+use crate::bitfield::{BitField, ResizePolicy};
 use rust_decimal::prelude::*;
 use std::ops::MulAssign;
 
@@ -466,14 +466,6 @@ const HALF_POWS: [f64; 255] = [
     1.727233711018889e-77,
 ];
 
-fn all_chars_are(s: &str, c: char) -> bool {
-    s.chars().all(|x| x == c)
-}
-
-fn add_leading_zeroes(s: &str, target_size: usize) -> String {
-    "0".repeat(target_size - s.len()) + s
-}
-
 pub enum SpecialValue {
     SmallestPositiveSubnormalNumber,
     LargestSubnormalNumber,
@@ -484,36 +476,31 @@ pub enum SpecialValue {
     SmallestNumberLargerThanOne,
 }
 
-pub fn make_binary_zero(layout: FloatLayout, is_positive: bool) -> String {
+pub fn make_binary_zero(layout: FloatLayout, is_positive: bool) -> BitField {
     if is_positive || layout.is_unsigned() {
-        "0".repeat(layout.get_size())
+        BitField::make_all_zeroes(layout.get_size())
     } else {
-        let bits = layout.get_sign_bits(1)
-            + layout.get_zero_exponent_bits()
-            + layout.get_zero_mantissa_bits();
-        bits.to_string()
+        layout.get_sign_bits(1) + layout.get_zero_exponent_bits() + layout.get_zero_mantissa_bits()
     }
 }
 
-pub fn make_binary_infinity(layout: FloatLayout, is_positive: bool) -> String {
-    let bits = layout.get_sign_bits(if is_positive { 0 } else { 1 })
+pub fn make_binary_infinity(layout: FloatLayout, is_positive: bool) -> BitField {
+    layout.get_sign_bits(if is_positive { 0 } else { 1 })
         + layout.get_one_exponent_bits()
-        + layout.get_zero_mantissa_bits();
-    bits.to_string()
+        + layout.get_zero_mantissa_bits()
 }
 
-pub fn make_binary_nan(layout: FloatLayout, is_signaling: bool, _payload: u32) -> String {
+pub fn make_binary_nan(layout: FloatLayout, is_signaling: bool, _payload: u32) -> BitField {
     // TODO: use _payload
-    let bits = layout.get_zero_sign_bits()
+    layout.get_zero_sign_bits()
         + layout.get_one_exponent_bits()
         + BitField::make_u8(if is_signaling { 0 } else { 1 }, 1)
         + BitField::make_all_zeroes(layout.get_mantissa_size() - 2)
-        + BitField::make_u8(1, 1);
-    bits.to_string()
+        + BitField::make_u8(1, 1)
 }
 
-pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> String {
-    let bits = match special_value {
+pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> BitField {
+    match special_value {
         SpecialValue::SmallestPositiveSubnormalNumber => {
             layout.get_zero_sign_bits()
                 + layout.get_zero_exponent_bits()
@@ -554,26 +541,49 @@ pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> 
                 + BitField::make_all_ones(layout.get_exponent_size() - 1)
                 + BitField::make_u8(1, layout.get_mantissa_size())
         }
-    };
-    bits.to_string()
+    }
+}
+
+pub fn is_binary_special(binary: BitField, layout: FloatLayout) -> Option<SpecialValue> {
+    if binary
+        .get_sub(0..layout.get_mantissa_end_bit())
+        .all_bits_are(false)
+        && binary.get_bit(0) == true
+    {
+        return Some(SpecialValue::SmallestPositiveNormalNumber);
+    }
+
+    if binary
+        .get_sub(0..layout.get_exponent_end_bit() + 1)
+        .all_bits_are(false)
+        && binary
+            .get_sub(layout.get_mantissa_start_bit()..layout.get_mantissa_end_bit() + 1)
+            .all_bits_are(true)
+    {
+        return Some(SpecialValue::LargestSubnormalNumber);
+    }
+
+    // TODO: make others
+
+    None
 }
 
 pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
     let decimal = decimal.trim().to_lowercase();
 
     if decimal.contains("inf") {
-        return make_binary_infinity(layout, !decimal.starts_with('-'));
+        return make_binary_infinity(layout, !decimal.starts_with('-')).to_string();
     }
 
     if decimal.contains("nan") {
-        return make_binary_nan(layout, false, 0);
+        return make_binary_nan(layout, false, 0).to_string();
     }
 
     let dec = Decimal::from_str(&decimal).unwrap();
     let positive = dec.is_sign_positive() && !decimal.starts_with('-');
 
     if dec.is_zero() {
-        return make_binary_zero(layout, positive);
+        return make_binary_zero(layout, positive).to_string();
     }
 
     let dec = dec.abs();
@@ -581,13 +591,13 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
     let mut fract = dec.fract();
 
     let int_bin = if int.is_zero() {
-        String::new()
+        BitField::new(0)
     } else {
-        format!("{:b}", int.to_usize().unwrap())[1..].to_owned()
+        BitField::parse(&format!("{:b}", int.to_usize().unwrap())[1..].to_owned()).unwrap()
     };
 
     let mut negative_exponent: usize = 0;
-    let mut fract_bin = String::new();
+    let mut fract_bin = BitField::new(0);
 
     if int.is_zero() {
         loop {
@@ -608,44 +618,44 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
         }
     }
 
-    for _ in 0..(layout.mantissa as isize - int_bin.len() as isize) {
+    for _ in 0..(layout.mantissa as isize - int_bin.size() as isize) {
         if fract.is_zero() {
             break;
         }
 
         fract.mul_assign(Decimal::new(2, 0));
-        fract_bin += if fract.trunc().is_zero() { "0" } else { "1" };
+        fract_bin.push_low_bit(!fract.trunc().is_zero());
         fract = fract.fract();
     }
 
-    let exponent = (int_bin.len() as isize - negative_exponent as isize
-        + layout.exponent_bias as isize) as usize;
-    let exponent_bin = format!("{:b}", exponent);
-    let mut mantissa_bin = int_bin + &fract_bin;
-    mantissa_bin.truncate(layout.get_mantissa_size());
+    let exponent =
+        int_bin.size() as isize - negative_exponent as isize + layout.exponent_bias as isize;
 
-    let mut binary = String::new();
+    let exponent_bin = BitField::parse(&format!("{:b}", exponent)).unwrap();
+    let mut mantissa_bin = int_bin + fract_bin;
+    mantissa_bin.resize(layout.get_mantissa_size(), ResizePolicy::AffectLowBits);
+
+    let mut binary = BitField::new(0);
 
     if layout.sign > 1 {
-        binary.push_str(&"0".repeat(layout.sign as usize - 1));
+        binary += BitField::make_all_zeroes(layout.sign as usize - 1);
     }
     if layout.sign > 0 {
-        let sign = if positive { '0' } else { '1' };
-        binary.push(sign);
+        binary.push_low_bit(!positive);
     }
 
-    if layout.exponent as usize > exponent_bin.len() {
-        binary.push_str(&"0".repeat(layout.exponent as usize - exponent_bin.len()));
+    if layout.exponent as usize > exponent_bin.size() {
+        binary += BitField::make_all_zeroes(layout.exponent as usize - exponent_bin.size());
     }
     if layout.exponent > 0 {
-        binary.push_str(&exponent_bin);
+        binary += exponent_bin;
     }
 
-    if layout.mantissa as usize > mantissa_bin.len() {
-        binary.push_str(&"0".repeat(layout.mantissa as usize - mantissa_bin.len()));
+    if layout.mantissa as usize > mantissa_bin.size() {
+        binary += BitField::make_all_zeroes(layout.mantissa as usize - mantissa_bin.size());
     }
     if layout.mantissa > 0 {
-        binary.push_str(&mantissa_bin);
+        binary += mantissa_bin;
     }
 
     // rounding routine
@@ -654,65 +664,58 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
         let carry = !fract.trunc().is_zero();
 
         if carry {
-            if all_chars_are(&binary[layout.get_mantissa_start_char()..], '1')
-                && all_chars_are(
-                    &binary[layout.get_exponent_start_char()..layout.get_exponent_end_char()],
-                    '1',
+            if binary.all_bits_in_range_are(layout.get_mantissa_start_char().., true)
+                && binary.all_bits_in_range_are(
+                    layout.get_exponent_start_char()..layout.get_exponent_end_char(),
+                    true,
                 )
             {
                 binary = make_binary_infinity(layout, true);
             } else {
-                for i in (layout.get_exponent_start_char()..binary.len()).rev() {
-                    let c = binary.chars().nth(i).unwrap();
-                    if c == '0' {
-                        binary.replace_range(i..i + 1, "1");
-                        break;
+                for i in layout.get_mantissa_start_bit()..layout.get_exponent_start_bit() {
+                    let bit = binary.get_bit(i);
+                    if bit {
+                        binary.set_bit(i, false);
                     } else {
-                        binary.replace_range(i..i + 1, "0");
+                        binary.set_bit(i, true);
+                        break;
                     }
                 }
             }
         }
     }
 
-    binary
+    binary.to_string()
 }
 
 pub fn binary_to_decimal(binary: &str, layout: FloatLayout, precision: u8) -> String {
-    let b = if binary.len() < layout.get_size() {
-        add_leading_zeroes(binary, layout.get_size())
-    } else if binary.len() > layout.get_size() {
-        let remove_range = 0..(binary.len() - layout.get_size());
-        assert!(all_chars_are(&binary[remove_range.clone()], '0'));
+    let b = BitField::parse_with_size(binary, layout.get_size()).unwrap();
 
-        let mut b = binary.to_owned();
-        b.replace_range(remove_range, "");
-        b
+    let sign = if b.get_bit(layout.get_sign_end_bit().unwrap()) {
+        -1
     } else {
-        binary.to_owned()
+        1
     };
 
-    let sign_binary = if layout.get_sign_size() > 0 {
-        &b[0..layout.get_sign_size()]
-    } else {
-        ""
-    };
-    let exponent_binary = &b[layout.get_exponent_start_char()..layout.get_exponent_end_char() + 1];
-    let mantissa_binary = &b[layout.get_mantissa_start_char()..layout.get_mantissa_end_char() + 1];
+    let exponent_binary =
+        b.get_sub(layout.get_exponent_start_bit()..layout.get_exponent_end_bit() + 1);
+    let mantissa_binary =
+        b.get_sub(layout.get_mantissa_start_bit()..layout.get_mantissa_end_bit() + 1);
 
-    let sign: i8 = if sign_binary.ends_with('1') { -1 } else { 1 };
-    let exponent = i32::from_str_radix(exponent_binary, 2).unwrap() - layout.exponent_bias as i32;
+    let exponent =
+        i32::from_str_radix(&exponent_binary.to_string(), 2).unwrap() - layout.exponent_bias as i32;
     let mut mantissa = 1f64;
 
-    for (i, bit) in mantissa_binary.chars().enumerate() {
-        if bit == '1' {
+    for i in 0..mantissa_binary.size() {
+        let bit = mantissa_binary.get_bit(mantissa_binary.size() - i - 1);
+        if bit {
             mantissa += HALF_POWS[i];
         }
     }
 
     // println!("{}", sign);
     // println!("{}", exponent);
-    // println!("{}", mantissa);
+    // println!("{}\n", mantissa);
 
     let res: f64 = sign as f64 * 2f64.powi(exponent) * mantissa;
     // res.to_string()
@@ -969,7 +972,7 @@ mod tests {
         );
         assert_eq!(
             binary_to_decimal(
-                &make_binary_special(FLOAT32_LAYOUT, SpecialValue::One),
+                &make_binary_special(FLOAT32_LAYOUT, SpecialValue::One).to_string(),
                 FLOAT32_LAYOUT,
                 4
             ),
@@ -1016,106 +1019,112 @@ mod tests {
     #[test]
     fn test_special_values() {
         assert_eq!(
-            make_binary_zero(FLOAT32_LAYOUT, true),
+            make_binary_zero(FLOAT32_LAYOUT, true).to_string(),
             "00000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_zero(FLOAT32_LAYOUT, false),
+            make_binary_zero(FLOAT32_LAYOUT, false).to_string(),
             "10000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT32_LAYOUT, true),
+            make_binary_infinity(FLOAT32_LAYOUT, true).to_string(),
             "01111111100000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT32_LAYOUT, false),
+            make_binary_infinity(FLOAT32_LAYOUT, false).to_string(),
             "11111111100000000000000000000000"
         );
         assert_eq!(
-            make_binary_nan(FLOAT32_LAYOUT, false, 0),
+            make_binary_nan(FLOAT32_LAYOUT, false, 0).to_string(),
             "01111111110000000000000000000001"
         );
         assert_eq!(
             make_binary_special(
                 FLOAT32_LAYOUT,
                 SpecialValue::SmallestPositiveSubnormalNumber
-            ),
+            )
+            .to_string(),
             "00000000000000000000000000000001"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestSubnormalNumber),
+            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestSubnormalNumber).to_string(),
             "00000000011111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::SmallestPositiveNormalNumber),
+            make_binary_special(FLOAT32_LAYOUT, SpecialValue::SmallestPositiveNormalNumber)
+                .to_string(),
             "00000000100000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestNormalNumber),
+            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestNormalNumber).to_string(),
             "01111111011111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestNumberLessThanOne),
+            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestNumberLessThanOne).to_string(),
             "00111111011111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::One),
+            make_binary_special(FLOAT32_LAYOUT, SpecialValue::One).to_string(),
             "00111111100000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::SmallestNumberLargerThanOne),
+            make_binary_special(FLOAT32_LAYOUT, SpecialValue::SmallestNumberLargerThanOne)
+                .to_string(),
             "00111111100000000000000000000001"
         );
 
         assert_eq!(
-            make_binary_zero(FLOAT64_LAYOUT, true),
+            make_binary_zero(FLOAT64_LAYOUT, true).to_string(),
             "0000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_zero(FLOAT64_LAYOUT, false),
+            make_binary_zero(FLOAT64_LAYOUT, false).to_string(),
             "1000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT64_LAYOUT, true),
+            make_binary_infinity(FLOAT64_LAYOUT, true).to_string(),
             "0111111111110000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT64_LAYOUT, false),
+            make_binary_infinity(FLOAT64_LAYOUT, false).to_string(),
             "1111111111110000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_nan(FLOAT64_LAYOUT, false, 0),
+            make_binary_nan(FLOAT64_LAYOUT, false, 0).to_string(),
             "0111111111111000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
             make_binary_special(
                 FLOAT64_LAYOUT,
                 SpecialValue::SmallestPositiveSubnormalNumber
-            ),
+            )
+            .to_string(),
             "0000000000000000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestSubnormalNumber),
+            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestSubnormalNumber).to_string(),
             "0000000000001111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::SmallestPositiveNormalNumber),
+            make_binary_special(FLOAT64_LAYOUT, SpecialValue::SmallestPositiveNormalNumber)
+                .to_string(),
             "0000000000010000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestNormalNumber),
+            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestNormalNumber).to_string(),
             "0111111111101111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestNumberLessThanOne),
+            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestNumberLessThanOne).to_string(),
             "0011111111101111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::One),
+            make_binary_special(FLOAT64_LAYOUT, SpecialValue::One).to_string(),
             "0011111111110000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::SmallestNumberLargerThanOne),
+            make_binary_special(FLOAT64_LAYOUT, SpecialValue::SmallestNumberLargerThanOne)
+                .to_string(),
             "0011111111110000000000000000000000000000000000000000000000000001"
         );
     }

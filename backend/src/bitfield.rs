@@ -1,6 +1,11 @@
 use core::ops::Add;
 use std::fmt::Display;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, RangeBounds};
+
+pub enum ResizePolicy {
+    AffectLowBits,
+    AffectHighBits,
+}
 
 #[derive(Copy, Clone)]
 pub struct BitField {
@@ -148,6 +153,10 @@ impl BitField {
         if pos >= self.size {
             return;
         }
+        self.set_bit_unchecked(pos, value);
+    }
+
+    fn set_bit_unchecked(&mut self, pos: usize, value: bool) {
         let block_index = pos / BitField::block_size();
         let bit_position = pos % BitField::block_size();
         if value {
@@ -189,6 +198,52 @@ impl BitField {
         *self = self.concat(other);
     }
 
+    pub fn push_low_bit(&mut self, bit: bool) {
+        self.concat_in_place(&BitField::make_u8(bit as u8, 1))
+    }
+
+    pub fn push_high_bit(&mut self, bit: bool) {
+        assert_ne!(self.size, BitField::max_size());
+
+        self.set_bit_unchecked(self.size, bit);
+        self.size += 1;
+    }
+
+    pub fn resize(&mut self, new_size: usize, resize_policy: ResizePolicy) {
+        let diff = new_size as isize - self.size() as isize;
+        if diff == 0 {
+            return;
+        }
+
+        match resize_policy {
+            ResizePolicy::AffectLowBits => {
+                if diff < 0 {
+                    for i in 0..new_size {
+                        self.set_bit(i, self.get_bit(i + diff.abs() as usize));
+                    }
+                    for i in new_size..BitField::max_size() {
+                        self.set_bit(i, false);
+                    }
+                } else {
+                    for i in (0..self.size).rev() {
+                        self.set_bit_unchecked(i + diff as usize, self.get_bit(i));
+                    }
+                    for i in 0..diff as usize {
+                        self.set_bit(i, false);
+                    }
+                }
+            }
+            ResizePolicy::AffectHighBits => {
+                if diff < 0 {
+                    for i in new_size..BitField::max_size() {
+                        self.set_bit(i, false);
+                    }
+                }
+            }
+        };
+        self.size = new_size;
+    }
+
     pub fn parse(s: &str) -> Option<BitField> {
         BitField::parse_with_size(s, s.len())
     }
@@ -207,6 +262,40 @@ impl BitField {
         }
 
         Some(result)
+    }
+
+    pub fn all_bits_are(&self, bit: bool) -> bool {
+        self.all_bits_in_range_are(0..self.size, bit)
+    }
+
+    pub fn all_bits_in_range_are<R>(&self, range: R, bit: bool) -> bool
+    where
+        R: RangeBounds<usize> + std::iter::Iterator<Item = usize>,
+    {
+        for i in range {
+            if self.get_bit(i) != bit {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    pub fn get_sub<R>(&self, range: R) -> BitField
+    where
+        R: RangeBounds<usize> + std::iter::Iterator<Item = usize>,
+    {
+        let mut res = BitField::new(0);
+
+        let mut i: usize = 0;
+
+        for j in range {
+            res.set_bit_unchecked(i, self.get_bit(j));
+            i += 1;
+        }
+
+        res.size = i;
+        res
     }
 }
 
@@ -290,5 +379,42 @@ mod tests {
             assert_eq!(bit_field.get_bit(8), false);
             assert_eq!(bit_field.get_bit(9), false);
         }
+    }
+
+    #[test]
+    fn test_resize() {
+        let origin = BitField::parse("001111011001").unwrap();
+        {
+            let mut bitfield = origin.clone();
+            bitfield.resize(5, ResizePolicy::AffectLowBits);
+            assert_eq!(bitfield.size(), 5);
+            assert_eq!(bitfield.to_string(), "00111");
+        }
+        {
+            let mut bitfield = origin.clone();
+            bitfield.resize(5, ResizePolicy::AffectHighBits);
+            assert_eq!(bitfield.size(), 5);
+            assert_eq!(bitfield.to_string(), "11001");
+        }
+        {
+            let mut bitfield = origin.clone();
+            bitfield.resize(21, ResizePolicy::AffectLowBits);
+            assert_eq!(bitfield.size(), 21);
+            assert_eq!(bitfield.to_string(), "001111011001000000000");
+        }
+        {
+            let mut bitfield = origin.clone();
+            bitfield.resize(21, ResizePolicy::AffectHighBits);
+            assert_eq!(bitfield.size(), 21);
+            assert_eq!(bitfield.to_string(), "000000000001111011001");
+        }
+    }
+
+    #[test]
+    fn test_sub_bit_field() {
+        let origin = BitField::parse("001111011001").unwrap();
+        let sub = origin.get_sub(2..7);
+        assert_eq!(sub.size(), 5);
+        assert_eq!(sub.to_string(), "10110");
     }
 }
