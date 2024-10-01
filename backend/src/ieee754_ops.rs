@@ -1,3 +1,4 @@
+use crate::bitfield::BitField;
 use rust_decimal::prelude::*;
 use std::ops::MulAssign;
 
@@ -107,6 +108,34 @@ impl FloatLayout {
 
     const fn is_unsigned(&self) -> bool {
         self.sign == 0
+    }
+
+    fn get_zero_sign_bits(&self) -> BitField {
+        BitField::make_all_zeroes(self.get_sign_size())
+    }
+
+    fn get_one_sign_bits(&self) -> BitField {
+        BitField::make_all_ones(self.get_sign_size())
+    }
+
+    fn get_sign_bits(&self, val: u8) -> BitField {
+        BitField::make_u8(val, self.get_sign_size())
+    }
+
+    fn get_zero_exponent_bits(&self) -> BitField {
+        BitField::make_all_zeroes(self.get_exponent_size())
+    }
+
+    fn get_one_exponent_bits(&self) -> BitField {
+        BitField::make_all_ones(self.get_exponent_size())
+    }
+
+    fn get_zero_mantissa_bits(&self) -> BitField {
+        BitField::make_all_zeroes(self.get_mantissa_size())
+    }
+
+    fn get_one_mantissa_bits(&self) -> BitField {
+        BitField::make_all_ones(self.get_mantissa_size())
     }
 }
 
@@ -459,69 +488,74 @@ pub fn make_binary_zero(layout: FloatLayout, is_positive: bool) -> String {
     if is_positive || layout.is_unsigned() {
         "0".repeat(layout.get_size())
     } else {
-        add_leading_zeroes("1", layout.get_sign_size())
-            + &"0".repeat(layout.get_size() - layout.get_sign_size())
+        let bits = layout.get_sign_bits(1)
+            + layout.get_zero_exponent_bits()
+            + layout.get_zero_mantissa_bits();
+        bits.to_string()
     }
 }
 
 pub fn make_binary_infinity(layout: FloatLayout, is_positive: bool) -> String {
-    add_leading_zeroes(if is_positive { "0" } else { "1" }, layout.get_sign_size())
-        + &"1".repeat(layout.get_exponent_size())
-        + &"0".repeat(layout.get_mantissa_size())
+    let bits = layout.get_sign_bits(if is_positive { 0 } else { 1 })
+        + layout.get_one_exponent_bits()
+        + layout.get_zero_mantissa_bits();
+    bits.to_string()
 }
 
-pub fn make_binary_nan(layout: FloatLayout, is_signaling: bool, payload: u32) -> String {
-    // TODO: use payload
-    add_leading_zeroes("0", layout.get_sign_size())
-        + &"1".repeat(layout.get_exponent_size())
-        + if is_signaling { "0" } else { "1" }
-        + &"0".repeat(layout.get_mantissa_size() - 2)
-        + "1"
+pub fn make_binary_nan(layout: FloatLayout, is_signaling: bool, _payload: u32) -> String {
+    // TODO: use _payload
+    let bits = layout.get_zero_sign_bits()
+        + layout.get_one_exponent_bits()
+        + BitField::make_u8(if is_signaling { 0 } else { 1 }, 1)
+        + BitField::make_all_zeroes(layout.get_mantissa_size() - 2)
+        + BitField::make_u8(1, 1);
+    bits.to_string()
 }
 
 pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> String {
-    match special_value {
+    let bits = match special_value {
         SpecialValue::SmallestPositiveSubnormalNumber => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + &"0".repeat(layout.get_exponent_size())
-                + &add_leading_zeroes("1", layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + layout.get_zero_exponent_bits()
+                + BitField::make_u8(1, layout.get_mantissa_size())
         }
         SpecialValue::LargestSubnormalNumber => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + &"0".repeat(layout.get_exponent_size())
-                + &"1".repeat(layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + layout.get_zero_exponent_bits()
+                + layout.get_one_mantissa_bits()
         }
         SpecialValue::SmallestPositiveNormalNumber => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + &add_leading_zeroes("1", layout.get_exponent_size())
-                + &"0".repeat(layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + BitField::make_u8(1, layout.get_exponent_size())
+                + layout.get_zero_mantissa_bits()
         }
         SpecialValue::LargestNormalNumber => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + &"1".repeat(layout.get_exponent_size() - 1)
-                + "0"
-                + &"1".repeat(layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + BitField::make_all_ones(layout.get_exponent_size() - 1)
+                + BitField::make_all_zeroes(1)
+                + layout.get_one_mantissa_bits()
         }
         SpecialValue::LargestNumberLessThanOne => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + "0"
-                + &"1".repeat(layout.get_exponent_size() - 2)
-                + "0"
-                + &"1".repeat(layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + BitField::make_all_zeroes(1)
+                + BitField::make_all_ones(layout.get_exponent_size() - 2)
+                + BitField::make_all_zeroes(1)
+                + layout.get_one_mantissa_bits()
         }
         SpecialValue::One => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + "0"
-                + &"1".repeat(layout.get_exponent_size() - 1)
-                + &"0".repeat(layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + BitField::make_all_zeroes(1)
+                + BitField::make_all_ones(layout.get_exponent_size() - 1)
+                + layout.get_zero_mantissa_bits()
         }
         SpecialValue::SmallestNumberLargerThanOne => {
-            add_leading_zeroes("0", layout.get_sign_size())
-                + "0"
-                + &"1".repeat(layout.get_exponent_size() - 1)
-                + &add_leading_zeroes("1", layout.get_mantissa_size())
+            layout.get_zero_sign_bits()
+                + BitField::make_all_zeroes(1)
+                + BitField::make_all_ones(layout.get_exponent_size() - 1)
+                + BitField::make_u8(1, layout.get_mantissa_size())
         }
-    }
+    };
+    bits.to_string()
 }
 
 pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
@@ -936,7 +970,8 @@ mod tests {
         assert_eq!(
             binary_to_decimal(
                 &make_binary_special(FLOAT32_LAYOUT, SpecialValue::One),
-                FLOAT32_LAYOUT, 4
+                FLOAT32_LAYOUT,
+                4
             ),
             "1"
         );

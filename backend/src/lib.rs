@@ -2,6 +2,7 @@ use crate::ieee754_ops::{binary_to_decimal, FLOAT32_LAYOUT};
 use ieee754_ops::decimal_to_binary;
 use wasm_bindgen::prelude::*;
 
+mod bitfield;
 mod ieee754_ops;
 
 // This will expose the function to JavaScript
