@@ -13,5 +13,5 @@ pub fn float32_to_binary(float: &str) -> String {
 // An example of converting binary to a 32-bit float
 #[wasm_bindgen]
 pub fn binary_to_float32(binary: &str) -> String {
-    binary_to_decimal(binary, FLOAT32_LAYOUT)
+    binary_to_decimal(binary, FLOAT32_LAYOUT, 20)
 }

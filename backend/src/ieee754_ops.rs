@@ -644,7 +644,7 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
     binary
 }
 
-pub fn binary_to_decimal(binary: &str, layout: FloatLayout) -> String {
+pub fn binary_to_decimal(binary: &str, layout: FloatLayout, precision: u8) -> String {
     let b = if binary.len() < layout.get_size() {
         add_leading_zeroes(binary, layout.get_size())
     } else if binary.len() > layout.get_size() {
@@ -683,7 +683,7 @@ pub fn binary_to_decimal(binary: &str, layout: FloatLayout) -> String {
     let res: f64 = sign as f64 * 2f64.powi(exponent) * mantissa;
     // res.to_string()
     let dec = Decimal::from_f64(res).unwrap();
-    dec.round_dp(4).normalize().to_string()
+    dec.round_dp(precision as u32).normalize().to_string()
 }
 
 #[cfg(test)]
@@ -930,50 +930,50 @@ mod tests {
     #[test]
     fn test_binary32_to_decimal() {
         assert_eq!(
-            binary_to_decimal("00000000000000000000000000000000", FLOAT32_LAYOUT),
+            binary_to_decimal("00000000000000000000000000000000", FLOAT32_LAYOUT, 4),
             "0"
         );
         assert_eq!(
             binary_to_decimal(
                 &make_binary_special(FLOAT32_LAYOUT, SpecialValue::One),
-                FLOAT32_LAYOUT
+                FLOAT32_LAYOUT, 4
             ),
             "1"
         );
         assert_eq!(
-            binary_to_decimal("01000000010010001111010111000011", FLOAT32_LAYOUT),
+            binary_to_decimal("01000000010010001111010111000011", FLOAT32_LAYOUT, 4),
             "3.14"
         );
         assert_eq!(
-            binary_to_decimal("01000101101110100011110010111000", FLOAT32_LAYOUT),
-            "5959.5898"
+            binary_to_decimal("01000101101110100011110010111000", FLOAT32_LAYOUT, 2),
+            "5959.59"
         );
         assert_eq!(
-            binary_to_decimal("10111000110100011011011100010111", FLOAT32_LAYOUT),
+            binary_to_decimal("10111000110100011011011100010111", FLOAT32_LAYOUT, 4),
             "-0.0001"
         );
         assert_eq!(
-            binary_to_decimal("00111101110011001100110011001101", FLOAT32_LAYOUT),
+            binary_to_decimal("00111101110011001100110011001101", FLOAT32_LAYOUT, 4),
             "0.1"
         );
         assert_eq!(
-            binary_to_decimal("00111110101010101010101010101010", FLOAT32_LAYOUT),
+            binary_to_decimal("00111110101010101010101010101010", FLOAT32_LAYOUT, 4),
             "0.3333"
         );
         assert_eq!(
-            binary_to_decimal("00111110101010101010101010101011", FLOAT32_LAYOUT),
+            binary_to_decimal("00111110101010101010101010101011", FLOAT32_LAYOUT, 4),
             "0.3333"
         );
         assert_eq!(
-            binary_to_decimal("00111111100000000000000000000001", FLOAT32_LAYOUT),
+            binary_to_decimal("00111111100000000000000000000001", FLOAT32_LAYOUT, 4),
             "1"
         );
         assert_eq!(
-            binary_to_decimal("01001011011111111111111111111111", FLOAT32_LAYOUT),
+            binary_to_decimal("01001011011111111111111111111111", FLOAT32_LAYOUT, 4),
             "16777215"
         );
         assert_eq!(
-            binary_to_decimal("01001011100000000000000000000000", FLOAT32_LAYOUT),
+            binary_to_decimal("01001011100000000000000000000000", FLOAT32_LAYOUT, 4),
             "16777216"
         );
     }
