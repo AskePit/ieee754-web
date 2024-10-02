@@ -1,5 +1,6 @@
 use crate::bitfield::{BitField, ResizePolicy};
 use rust_decimal::prelude::*;
+use std::cmp::PartialEq;
 use std::ops::MulAssign;
 
 pub struct FloatLayout {
@@ -42,17 +43,9 @@ impl FloatLayout {
         self.get_end_bit()
     }
 
-    const fn get_sign_start_char(&self) -> Option<usize> {
+    const fn get_sign_char(&self) -> Option<usize> {
         if self.sign > 0 {
             Some(self.get_start_char())
-        } else {
-            None
-        }
-    }
-
-    const fn get_sign_end_char(&self) -> Option<usize> {
-        if self.sign > 0 {
-            Some((self.sign - 1) as usize)
         } else {
             None
         }
@@ -74,7 +67,7 @@ impl FloatLayout {
         self.get_end_char()
     }
 
-    const fn get_sign_start_bit(&self) -> Option<usize> {
+    const fn get_sign_bit(&self) -> Option<usize> {
         if self.sign > 0 {
             Some((self.mantissa + self.exponent) as usize)
         } else {
@@ -82,12 +75,8 @@ impl FloatLayout {
         }
     }
 
-    const fn get_sign_end_bit(&self) -> Option<usize> {
-        if self.sign > 0 {
-            Some(self.get_end_bit())
-        } else {
-            None
-        }
+    const fn get_sign_bit_unchecked(&self) -> usize {
+        (self.mantissa + self.exponent) as usize
     }
 
     const fn get_exponent_start_bit(&self) -> usize {
@@ -466,7 +455,12 @@ const HALF_POWS: [f64; 255] = [
     1.727233711018889e-77,
 ];
 
+#[derive(PartialEq)]
 pub enum SpecialValue {
+    Zero(bool),
+    Infinity(bool),
+    Nan(bool, BitField), // signaling, payload
+
     SmallestPositiveSubnormalNumber,
     LargestSubnormalNumber,
     SmallestPositiveNormalNumber,
@@ -476,7 +470,7 @@ pub enum SpecialValue {
     SmallestNumberLargerThanOne,
 }
 
-pub fn make_binary_zero(layout: FloatLayout, is_positive: bool) -> BitField {
+pub fn make_binary_zero(layout: &FloatLayout, is_positive: bool) -> BitField {
     if is_positive || layout.is_unsigned() {
         BitField::make_all_zeroes(layout.get_size())
     } else {
@@ -484,44 +478,63 @@ pub fn make_binary_zero(layout: FloatLayout, is_positive: bool) -> BitField {
     }
 }
 
-pub fn make_binary_infinity(layout: FloatLayout, is_positive: bool) -> BitField {
+pub fn make_binary_infinity(layout: &FloatLayout, is_positive: bool) -> BitField {
     layout.get_sign_bits(if is_positive { 0 } else { 1 })
         + layout.get_one_exponent_bits()
         + layout.get_zero_mantissa_bits()
 }
 
-pub fn make_binary_nan(layout: FloatLayout, is_signaling: bool, _payload: u32) -> BitField {
-    // TODO: use _payload
+pub fn make_binary_nan(
+    layout: &FloatLayout,
+    is_signaling: bool,
+    mut payload: BitField,
+) -> BitField {
+    payload.resize(layout.get_mantissa_size() - 2, ResizePolicy::AffectHighBits);
+
     layout.get_zero_sign_bits()
         + layout.get_one_exponent_bits()
         + BitField::make_u8(if is_signaling { 0 } else { 1 }, 1)
-        + BitField::make_all_zeroes(layout.get_mantissa_size() - 2)
+        + payload
         + BitField::make_u8(1, 1)
 }
 
-pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> BitField {
+pub fn make_binary_special(layout: &FloatLayout, special_value: SpecialValue) -> BitField {
     match special_value {
+        // 1 00000000 00000000000000000000000
+        // 0 00000000 00000000000000000000000
+        SpecialValue::Zero(sign) => make_binary_zero(layout, sign),
+        // 1 11111111 00000000000000000000000
+        // 0 11111111 00000000000000000000000
+        SpecialValue::Infinity(sign) => make_binary_infinity(layout, sign),
+        // x 11111111 1xxxxxxxxxxxxxxxxxxxxx1
+        // x 11111111 0xxxxxxxxxxxxxxxxxxxxx1
+        SpecialValue::Nan(signaling, payload) => make_binary_nan(layout, signaling, payload),
+        // 0 00000000 00000000000000000000001
         SpecialValue::SmallestPositiveSubnormalNumber => {
             layout.get_zero_sign_bits()
                 + layout.get_zero_exponent_bits()
                 + BitField::make_u8(1, layout.get_mantissa_size())
         }
+        // 0 00000000 11111111111111111111111
         SpecialValue::LargestSubnormalNumber => {
             layout.get_zero_sign_bits()
                 + layout.get_zero_exponent_bits()
                 + layout.get_one_mantissa_bits()
         }
+        // 0 00000001 00000000000000000000000
         SpecialValue::SmallestPositiveNormalNumber => {
             layout.get_zero_sign_bits()
                 + BitField::make_u8(1, layout.get_exponent_size())
                 + layout.get_zero_mantissa_bits()
         }
+        // 0 11111110 11111111111111111111111
         SpecialValue::LargestNormalNumber => {
             layout.get_zero_sign_bits()
                 + BitField::make_all_ones(layout.get_exponent_size() - 1)
                 + BitField::make_all_zeroes(1)
                 + layout.get_one_mantissa_bits()
         }
+        // 0 01111110 11111111111111111111111
         SpecialValue::LargestNumberLessThanOne => {
             layout.get_zero_sign_bits()
                 + BitField::make_all_zeroes(1)
@@ -529,12 +542,14 @@ pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> 
                 + BitField::make_all_zeroes(1)
                 + layout.get_one_mantissa_bits()
         }
+        // 0 01111111 00000000000000000000000
         SpecialValue::One => {
             layout.get_zero_sign_bits()
                 + BitField::make_all_zeroes(1)
                 + BitField::make_all_ones(layout.get_exponent_size() - 1)
                 + layout.get_zero_mantissa_bits()
         }
+        // 0 01111111 00000000000000000000001
         SpecialValue::SmallestNumberLargerThanOne => {
             layout.get_zero_sign_bits()
                 + BitField::make_all_zeroes(1)
@@ -544,31 +559,225 @@ pub fn make_binary_special(layout: FloatLayout, special_value: SpecialValue) -> 
     }
 }
 
-pub fn is_binary_special(binary: BitField, layout: FloatLayout) -> Option<SpecialValue> {
-    if binary
-        .get_sub(0..layout.get_mantissa_end_bit())
-        .all_bits_are(false)
-        && binary.get_bit(0) == true
-    {
-        return Some(SpecialValue::SmallestPositiveNormalNumber);
+pub fn is_binary_positive_zero(binary: BitField, _layout: &FloatLayout) -> bool {
+    // 0 00000000 00000000000000000000000
+    binary.all_bits_are(false)
+}
+
+pub fn is_binary_negative_zero(binary: BitField, layout: &FloatLayout) -> bool {
+    // 1 00000000 00000000000000000000000
+    if layout.is_unsigned() {
+        return false;
     }
 
-    if binary
-        .get_sub(0..layout.get_exponent_end_bit() + 1)
+    binary
+        .get_sub(0..=layout.get_exponent_end_bit())
+        .all_bits_are(false)
+        && binary.get_bit(layout.get_sign_bit_unchecked()) == true
+}
+
+pub fn is_binary_zero(binary: BitField, layout: &FloatLayout) -> bool {
+    is_binary_positive_zero(binary, layout) || is_binary_negative_zero(binary, layout)
+}
+
+pub fn is_binary_positive_infinity(binary: BitField, layout: &FloatLayout) -> bool {
+    // 0 11111111 00000000000000000000000
+    binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
         .all_bits_are(false)
         && binary
-            .get_sub(layout.get_mantissa_start_bit()..layout.get_mantissa_end_bit() + 1)
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit())
             .all_bits_are(true)
+        && binary.get_bit(layout.get_sign_bit_unchecked()) == false
+}
+
+pub fn is_binary_negative_infinity(binary: BitField, layout: &FloatLayout) -> bool {
+    // 1 11111111 00000000000000000000000
+    if layout.is_unsigned() {
+        return false;
+    }
+
+    binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
+        .all_bits_are(false)
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_end_bit())
+            .all_bits_are(true)
+}
+
+pub fn is_binary_infinity(binary: BitField, layout: &FloatLayout) -> bool {
+    is_binary_positive_infinity(binary, layout) || is_binary_negative_infinity(binary, layout)
+}
+
+pub fn is_binary_quiet_nan(binary: BitField, layout: &FloatLayout) -> (bool, BitField) {
+    // x 11111111 1xxxxxxxxxxxxxxxxxxxxx1
+    let is_it = binary.get_bit(0) == true
+        && binary.get_bit(layout.get_mantissa_end_bit()) == true
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit())
+            .all_bits_are(true);
+
+    (
+        is_it,
+        if is_it {
+            binary.get_sub(1..=layout.get_mantissa_end_bit() - 1)
+        } else {
+            BitField::new(0)
+        },
+    )
+}
+
+pub fn is_binary_signaling_nan(binary: BitField, layout: &FloatLayout) -> (bool, BitField) {
+    // x 11111111 0xxxxxxxxxxxxxxxxxxxxx1
+    let is_it = binary.get_bit(0) == true
+        && binary.get_bit(layout.get_mantissa_end_bit()) == false
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit())
+            .all_bits_are(true);
+
+    (
+        is_it,
+        if is_it {
+            binary.get_sub(1..=layout.get_mantissa_end_bit() - 1)
+        } else {
+            BitField::new(0)
+        },
+    )
+}
+
+pub fn is_binary_nan(binary: BitField, layout: &FloatLayout) -> bool {
+    is_binary_quiet_nan(binary, layout).0 || is_binary_signaling_nan(binary, layout).0
+}
+
+pub fn is_binary_special(binary: BitField, layout: &FloatLayout) -> Option<SpecialValue> {
+    // NegativeZero
+    if is_binary_negative_zero(binary, layout) {
+        return Some(SpecialValue::Zero(false));
+    }
+
+    // PositiveZero
+    if is_binary_positive_zero(binary, layout) {
+        return Some(SpecialValue::Zero(true));
+    }
+
+    // NegativeInfinity
+    if is_binary_negative_infinity(binary, layout) {
+        return Some(SpecialValue::Infinity(false));
+    }
+
+    // PositiveInfinity
+    if is_binary_positive_infinity(binary, layout) {
+        return Some(SpecialValue::Infinity(true));
+    }
+
+    // NanQuiet
+    let quiet_nan_info = is_binary_quiet_nan(binary, layout);
+    if quiet_nan_info.0 {
+        return Some(SpecialValue::Nan(false, quiet_nan_info.1));
+    }
+
+    // NanSignaling
+    let signaling_nan_info = is_binary_signaling_nan(binary, layout);
+    if signaling_nan_info.0 {
+        return Some(SpecialValue::Nan(true, signaling_nan_info.1));
+    }
+
+    // SmallestPositiveSubnormalNumber
+    // 0 00000000 00000000000000000000001
+    if binary.get_bit(0) == true && binary.get_sub(1..).all_bits_are(false) {
+        return Some(SpecialValue::SmallestPositiveSubnormalNumber);
+    }
+
+    // LargestSubnormalNumber
+    // 0 00000000 11111111111111111111111
+    if binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
+        .all_bits_are(true)
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..)
+            .all_bits_are(false)
     {
         return Some(SpecialValue::LargestSubnormalNumber);
     }
 
-    // TODO: make others
+    // SmallestPositiveNormalNumber
+    // 0 00000001 00000000000000000000000
+    if binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
+        .all_bits_are(false)
+        && binary.get_bit(layout.get_exponent_start_bit()) == true
+        && binary
+            .get_sub((layout.get_exponent_start_bit() + 1)..)
+            .all_bits_are(false)
+    {
+        return Some(SpecialValue::SmallestPositiveNormalNumber);
+    }
+
+    // LargestNormalNumber
+    // 0 11111110 11111111111111111111111
+    if binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
+        .all_bits_are(true)
+        && binary.get_bit(layout.get_exponent_start_bit()) == false
+        && binary
+            .get_sub(layout.get_exponent_start_bit() + 1..=layout.get_exponent_end_bit())
+            .all_bits_are(true)
+        && binary.get_bit(layout.get_sign_bit_unchecked()) == false
+    {
+        return Some(SpecialValue::LargestNormalNumber);
+    }
+
+    // LargestNumberLessThanOne
+    // 0 01111110 11111111111111111111111
+    if binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
+        .all_bits_are(true)
+        && binary.get_bit(layout.get_exponent_start_bit()) == false
+        && binary
+            .get_sub(layout.get_exponent_start_bit() + 1..=layout.get_exponent_end_bit() - 1)
+            .all_bits_are(true)
+        && binary
+            .get_sub(layout.get_exponent_end_bit()..)
+            .all_bits_are(false)
+    {
+        return Some(SpecialValue::LargestNumberLessThanOne);
+    }
+
+    // One
+    // 0 01111111 00000000000000000000000
+    if binary
+        .get_sub(0..=layout.get_mantissa_end_bit())
+        .all_bits_are(false)
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit() - 1)
+            .all_bits_are(true)
+        && binary
+            .get_sub(layout.get_exponent_end_bit()..)
+            .all_bits_are(false)
+    {
+        return Some(SpecialValue::One);
+    }
+
+    // SmallestNumberLargerThanOne
+    // 0 01111111 00000000000000000000001
+    if binary.get_bit(0) == true
+        && binary
+            .get_sub(1..=layout.get_mantissa_end_bit())
+            .all_bits_are(false)
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit() - 1)
+            .all_bits_are(true)
+        && binary
+            .get_sub(layout.get_exponent_end_bit()..)
+            .all_bits_are(false)
+    {
+        return Some(SpecialValue::SmallestNumberLargerThanOne);
+    }
 
     None
 }
 
-pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
+pub fn decimal_to_binary(decimal: &str, layout: &FloatLayout) -> String {
     let decimal = decimal.trim().to_lowercase();
 
     if decimal.contains("inf") {
@@ -576,7 +785,7 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
     }
 
     if decimal.contains("nan") {
-        return make_binary_nan(layout, false, 0).to_string();
+        return make_binary_nan(layout, false, BitField::new(0)).to_string();
     }
 
     let dec = Decimal::from_str(&decimal).unwrap();
@@ -664,12 +873,11 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
         let carry = !fract.trunc().is_zero();
 
         if carry {
-            if binary.all_bits_in_range_are(layout.get_mantissa_start_char().., true)
-                && binary.all_bits_in_range_are(
-                    layout.get_exponent_start_char()..layout.get_exponent_end_char(),
-                    true,
-                )
-            {
+            let is_largest_normal_number = is_binary_special(binary, &layout)
+                .map(|special| special == SpecialValue::LargestNormalNumber)
+                .unwrap_or(false);
+
+            if is_largest_normal_number {
                 binary = make_binary_infinity(layout, true);
             } else {
                 for i in layout.get_mantissa_start_bit()..layout.get_exponent_start_bit() {
@@ -688,10 +896,24 @@ pub fn decimal_to_binary(decimal: &str, layout: FloatLayout) -> String {
     binary.to_string()
 }
 
-pub fn binary_to_decimal(binary: &str, layout: FloatLayout, precision: u8) -> String {
+pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> String {
     let b = BitField::parse_with_size(binary, layout.get_size()).unwrap();
 
-    let sign = if b.get_bit(layout.get_sign_end_bit().unwrap()) {
+    // Special cases
+    if let Some(special) = is_binary_special(b, layout) {
+        let to_ret = match special {
+            SpecialValue::Zero(pos) => Some(if pos { "0.0" } else { "-0.0" }),
+            SpecialValue::Infinity(pos) => Some(if pos { "Infinity" } else { "-Infinity" }),
+            SpecialValue::Nan(_signaling, _payload) => Some("NaN"),
+            _ => None,
+        };
+
+        if let Some(ret) = to_ret {
+            return ret.to_string();
+        }
+    }
+
+    let sign = if b.get_bit(layout.get_sign_bit_unchecked()) {
         -1
     } else {
         1
@@ -734,14 +956,12 @@ mod tests {
         assert_eq!(FLOAT16_LAYOUT.get_end_bit(), 15);
         assert_eq!(FLOAT16_LAYOUT.get_start_char(), 0);
         assert_eq!(FLOAT16_LAYOUT.get_end_char(), 15);
-        assert_eq!(FLOAT16_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FLOAT16_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FLOAT16_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FLOAT16_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FLOAT16_LAYOUT.get_exponent_end_char(), 5);
         assert_eq!(FLOAT16_LAYOUT.get_mantissa_start_char(), 6);
         assert_eq!(FLOAT16_LAYOUT.get_mantissa_end_char(), 15);
-        assert_eq!(FLOAT16_LAYOUT.get_sign_start_bit(), Some(15));
-        assert_eq!(FLOAT16_LAYOUT.get_sign_end_bit(), Some(15));
+        assert_eq!(FLOAT16_LAYOUT.get_sign_bit(), Some(15));
         assert_eq!(FLOAT16_LAYOUT.get_exponent_start_bit(), 10);
         assert_eq!(FLOAT16_LAYOUT.get_exponent_end_bit(), 14);
         assert_eq!(FLOAT16_LAYOUT.get_mantissa_start_bit(), 0);
@@ -752,14 +972,12 @@ mod tests {
         assert_eq!(FLOAT32_LAYOUT.get_end_bit(), 31);
         assert_eq!(FLOAT32_LAYOUT.get_start_char(), 0);
         assert_eq!(FLOAT32_LAYOUT.get_end_char(), 31);
-        assert_eq!(FLOAT32_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FLOAT32_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FLOAT32_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FLOAT32_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FLOAT32_LAYOUT.get_exponent_end_char(), 8);
         assert_eq!(FLOAT32_LAYOUT.get_mantissa_start_char(), 9);
         assert_eq!(FLOAT32_LAYOUT.get_mantissa_end_char(), 31);
-        assert_eq!(FLOAT32_LAYOUT.get_sign_start_bit(), Some(31));
-        assert_eq!(FLOAT32_LAYOUT.get_sign_end_bit(), Some(31));
+        assert_eq!(FLOAT32_LAYOUT.get_sign_bit(), Some(31));
         assert_eq!(FLOAT32_LAYOUT.get_exponent_start_bit(), 23);
         assert_eq!(FLOAT32_LAYOUT.get_exponent_end_bit(), 30);
         assert_eq!(FLOAT32_LAYOUT.get_mantissa_start_bit(), 0);
@@ -770,14 +988,12 @@ mod tests {
         assert_eq!(FLOAT64_LAYOUT.get_end_bit(), 63);
         assert_eq!(FLOAT64_LAYOUT.get_start_char(), 0);
         assert_eq!(FLOAT64_LAYOUT.get_end_char(), 63);
-        assert_eq!(FLOAT64_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FLOAT64_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FLOAT64_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FLOAT64_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FLOAT64_LAYOUT.get_exponent_end_char(), 11);
         assert_eq!(FLOAT64_LAYOUT.get_mantissa_start_char(), 12);
         assert_eq!(FLOAT64_LAYOUT.get_mantissa_end_char(), 63);
-        assert_eq!(FLOAT64_LAYOUT.get_sign_start_bit(), Some(63));
-        assert_eq!(FLOAT64_LAYOUT.get_sign_end_bit(), Some(63));
+        assert_eq!(FLOAT64_LAYOUT.get_sign_bit(), Some(63));
         assert_eq!(FLOAT64_LAYOUT.get_exponent_start_bit(), 52);
         assert_eq!(FLOAT64_LAYOUT.get_exponent_end_bit(), 62);
         assert_eq!(FLOAT64_LAYOUT.get_mantissa_start_bit(), 0);
@@ -788,14 +1004,12 @@ mod tests {
         assert_eq!(FLOAT128_LAYOUT.get_end_bit(), 127);
         assert_eq!(FLOAT128_LAYOUT.get_start_char(), 0);
         assert_eq!(FLOAT128_LAYOUT.get_end_char(), 127);
-        assert_eq!(FLOAT128_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FLOAT128_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FLOAT128_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FLOAT128_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FLOAT128_LAYOUT.get_exponent_end_char(), 15);
         assert_eq!(FLOAT128_LAYOUT.get_mantissa_start_char(), 16);
         assert_eq!(FLOAT128_LAYOUT.get_mantissa_end_char(), 127);
-        assert_eq!(FLOAT128_LAYOUT.get_sign_start_bit(), Some(127));
-        assert_eq!(FLOAT128_LAYOUT.get_sign_end_bit(), Some(127));
+        assert_eq!(FLOAT128_LAYOUT.get_sign_bit(), Some(127));
         assert_eq!(FLOAT128_LAYOUT.get_exponent_start_bit(), 112);
         assert_eq!(FLOAT128_LAYOUT.get_exponent_end_bit(), 126);
         assert_eq!(FLOAT128_LAYOUT.get_mantissa_start_bit(), 0);
@@ -806,14 +1020,12 @@ mod tests {
         assert_eq!(FLOAT256_LAYOUT.get_end_bit(), 255);
         assert_eq!(FLOAT256_LAYOUT.get_start_char(), 0);
         assert_eq!(FLOAT256_LAYOUT.get_end_char(), 255);
-        assert_eq!(FLOAT256_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FLOAT256_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FLOAT256_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FLOAT256_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FLOAT256_LAYOUT.get_exponent_end_char(), 19);
         assert_eq!(FLOAT256_LAYOUT.get_mantissa_start_char(), 20);
         assert_eq!(FLOAT256_LAYOUT.get_mantissa_end_char(), 255);
-        assert_eq!(FLOAT256_LAYOUT.get_sign_start_bit(), Some(255));
-        assert_eq!(FLOAT256_LAYOUT.get_sign_end_bit(), Some(255));
+        assert_eq!(FLOAT256_LAYOUT.get_sign_bit(), Some(255));
         assert_eq!(FLOAT256_LAYOUT.get_exponent_start_bit(), 236);
         assert_eq!(FLOAT256_LAYOUT.get_exponent_end_bit(), 254);
         assert_eq!(FLOAT256_LAYOUT.get_mantissa_start_bit(), 0);
@@ -824,14 +1036,12 @@ mod tests {
         assert_eq!(FP8_E4M3_LAYOUT.get_end_bit(), 7);
         assert_eq!(FP8_E4M3_LAYOUT.get_start_char(), 0);
         assert_eq!(FP8_E4M3_LAYOUT.get_end_char(), 7);
-        assert_eq!(FP8_E4M3_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FP8_E4M3_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FP8_E4M3_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FP8_E4M3_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FP8_E4M3_LAYOUT.get_exponent_end_char(), 4);
         assert_eq!(FP8_E4M3_LAYOUT.get_mantissa_start_char(), 5);
         assert_eq!(FP8_E4M3_LAYOUT.get_mantissa_end_char(), 7);
-        assert_eq!(FP8_E4M3_LAYOUT.get_sign_start_bit(), Some(7));
-        assert_eq!(FP8_E4M3_LAYOUT.get_sign_end_bit(), Some(7));
+        assert_eq!(FP8_E4M3_LAYOUT.get_sign_bit(), Some(7));
         assert_eq!(FP8_E4M3_LAYOUT.get_exponent_start_bit(), 3);
         assert_eq!(FP8_E4M3_LAYOUT.get_exponent_end_bit(), 6);
         assert_eq!(FP8_E4M3_LAYOUT.get_mantissa_start_bit(), 0);
@@ -842,14 +1052,12 @@ mod tests {
         assert_eq!(FP8_E5M2_LAYOUT.get_end_bit(), 7);
         assert_eq!(FP8_E5M2_LAYOUT.get_start_char(), 0);
         assert_eq!(FP8_E5M2_LAYOUT.get_end_char(), 7);
-        assert_eq!(FP8_E5M2_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(FP8_E5M2_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(FP8_E5M2_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(FP8_E5M2_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(FP8_E5M2_LAYOUT.get_exponent_end_char(), 5);
         assert_eq!(FP8_E5M2_LAYOUT.get_mantissa_start_char(), 6);
         assert_eq!(FP8_E5M2_LAYOUT.get_mantissa_end_char(), 7);
-        assert_eq!(FP8_E5M2_LAYOUT.get_sign_start_bit(), Some(7));
-        assert_eq!(FP8_E5M2_LAYOUT.get_sign_end_bit(), Some(7));
+        assert_eq!(FP8_E5M2_LAYOUT.get_sign_bit(), Some(7));
         assert_eq!(FP8_E5M2_LAYOUT.get_exponent_start_bit(), 2);
         assert_eq!(FP8_E5M2_LAYOUT.get_exponent_end_bit(), 6);
         assert_eq!(FP8_E5M2_LAYOUT.get_mantissa_start_bit(), 0);
@@ -860,14 +1068,12 @@ mod tests {
         assert_eq!(BFLOAT16_LAYOUT.get_end_bit(), 15);
         assert_eq!(BFLOAT16_LAYOUT.get_start_char(), 0);
         assert_eq!(BFLOAT16_LAYOUT.get_end_char(), 15);
-        assert_eq!(BFLOAT16_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(BFLOAT16_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(BFLOAT16_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(BFLOAT16_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(BFLOAT16_LAYOUT.get_exponent_end_char(), 8);
         assert_eq!(BFLOAT16_LAYOUT.get_mantissa_start_char(), 9);
         assert_eq!(BFLOAT16_LAYOUT.get_mantissa_end_char(), 15);
-        assert_eq!(BFLOAT16_LAYOUT.get_sign_start_bit(), Some(15));
-        assert_eq!(BFLOAT16_LAYOUT.get_sign_end_bit(), Some(15));
+        assert_eq!(BFLOAT16_LAYOUT.get_sign_bit(), Some(15));
         assert_eq!(BFLOAT16_LAYOUT.get_exponent_start_bit(), 7);
         assert_eq!(BFLOAT16_LAYOUT.get_exponent_end_bit(), 14);
         assert_eq!(BFLOAT16_LAYOUT.get_mantissa_start_bit(), 0);
@@ -878,14 +1084,12 @@ mod tests {
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_end_bit(), 18);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_start_char(), 0);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_end_char(), 18);
-        assert_eq!(TENSOR_FLOAT32_LAYOUT.get_sign_start_char(), Some(0));
-        assert_eq!(TENSOR_FLOAT32_LAYOUT.get_sign_end_char(), Some(0));
+        assert_eq!(TENSOR_FLOAT32_LAYOUT.get_sign_char(), Some(0));
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_exponent_start_char(), 1);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_exponent_end_char(), 8);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_mantissa_start_char(), 9);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_mantissa_end_char(), 18);
-        assert_eq!(TENSOR_FLOAT32_LAYOUT.get_sign_start_bit(), Some(18));
-        assert_eq!(TENSOR_FLOAT32_LAYOUT.get_sign_end_bit(), Some(18));
+        assert_eq!(TENSOR_FLOAT32_LAYOUT.get_sign_bit(), Some(18));
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_exponent_start_bit(), 10);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_exponent_end_bit(), 17);
         assert_eq!(TENSOR_FLOAT32_LAYOUT.get_mantissa_start_bit(), 0);
@@ -895,71 +1099,71 @@ mod tests {
     #[test]
     fn test_decimal_to_binary32() {
         assert_eq!(
-            decimal_to_binary("3.14", FLOAT32_LAYOUT),
+            decimal_to_binary("3.14", &FLOAT32_LAYOUT),
             "01000000010010001111010111000011"
         );
         assert_eq!(
-            decimal_to_binary("1.0", FLOAT32_LAYOUT),
+            decimal_to_binary("1.0", &FLOAT32_LAYOUT),
             "00111111100000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("-1.0", FLOAT32_LAYOUT),
+            decimal_to_binary("-1.0", &FLOAT32_LAYOUT),
             "10111111100000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("0.0", FLOAT32_LAYOUT),
+            decimal_to_binary("0.0", &FLOAT32_LAYOUT),
             "00000000000000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("+0.0", FLOAT32_LAYOUT),
+            decimal_to_binary("+0.0", &FLOAT32_LAYOUT),
             "00000000000000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("-0.0", FLOAT32_LAYOUT),
+            decimal_to_binary("-0.0", &FLOAT32_LAYOUT),
             "10000000000000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("inf", FLOAT32_LAYOUT),
+            decimal_to_binary("inf", &FLOAT32_LAYOUT),
             "01111111100000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("-iNfInItY", FLOAT32_LAYOUT),
+            decimal_to_binary("-iNfInItY", &FLOAT32_LAYOUT),
             "11111111100000000000000000000000"
         );
         assert_eq!(
-            decimal_to_binary("NaN", FLOAT32_LAYOUT),
+            decimal_to_binary("NaN", &FLOAT32_LAYOUT),
             "01111111110000000000000000000001"
         );
         assert_eq!(
-            decimal_to_binary("5959.59", FLOAT32_LAYOUT),
+            decimal_to_binary("5959.59", &FLOAT32_LAYOUT),
             "01000101101110100011110010111000"
         );
         assert_eq!(
-            decimal_to_binary("-0.0001", FLOAT32_LAYOUT),
+            decimal_to_binary("-0.0001", &FLOAT32_LAYOUT),
             "10111000110100011011011100010111"
         );
         assert_eq!(
-            decimal_to_binary("0.1", FLOAT32_LAYOUT),
+            decimal_to_binary("0.1", &FLOAT32_LAYOUT),
             "00111101110011001100110011001101"
         );
         assert_eq!(
-            decimal_to_binary("0.3333333", FLOAT32_LAYOUT),
+            decimal_to_binary("0.3333333", &FLOAT32_LAYOUT),
             "00111110101010101010101010101010"
         );
         assert_eq!(
-            decimal_to_binary("0.33333333", FLOAT32_LAYOUT),
+            decimal_to_binary("0.33333333", &FLOAT32_LAYOUT),
             "00111110101010101010101010101011"
         );
         assert_eq!(
-            decimal_to_binary("1.000000119", FLOAT32_LAYOUT),
+            decimal_to_binary("1.000000119", &FLOAT32_LAYOUT),
             "00111111100000000000000000000001"
         );
         assert_eq!(
-            decimal_to_binary("16777215.0", FLOAT32_LAYOUT),
+            decimal_to_binary("16777215.0", &FLOAT32_LAYOUT),
             "01001011011111111111111111111111"
         );
         assert_eq!(
-            decimal_to_binary("16777216.0", FLOAT32_LAYOUT),
+            decimal_to_binary("16777216.0", &FLOAT32_LAYOUT),
             "01001011100000000000000000000000"
         );
     }
@@ -967,51 +1171,51 @@ mod tests {
     #[test]
     fn test_binary32_to_decimal() {
         assert_eq!(
-            binary_to_decimal("00000000000000000000000000000000", FLOAT32_LAYOUT, 4),
-            "0"
+            binary_to_decimal("00000000000000000000000000000000", &FLOAT32_LAYOUT, 4),
+            "0.0"
         );
         assert_eq!(
             binary_to_decimal(
-                &make_binary_special(FLOAT32_LAYOUT, SpecialValue::One).to_string(),
-                FLOAT32_LAYOUT,
+                &make_binary_special(&FLOAT32_LAYOUT, SpecialValue::One).to_string(),
+                &FLOAT32_LAYOUT,
                 4
             ),
             "1"
         );
         assert_eq!(
-            binary_to_decimal("01000000010010001111010111000011", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("01000000010010001111010111000011", &FLOAT32_LAYOUT, 4),
             "3.14"
         );
         assert_eq!(
-            binary_to_decimal("01000101101110100011110010111000", FLOAT32_LAYOUT, 2),
+            binary_to_decimal("01000101101110100011110010111000", &FLOAT32_LAYOUT, 2),
             "5959.59"
         );
         assert_eq!(
-            binary_to_decimal("10111000110100011011011100010111", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("10111000110100011011011100010111", &FLOAT32_LAYOUT, 4),
             "-0.0001"
         );
         assert_eq!(
-            binary_to_decimal("00111101110011001100110011001101", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("00111101110011001100110011001101", &FLOAT32_LAYOUT, 4),
             "0.1"
         );
         assert_eq!(
-            binary_to_decimal("00111110101010101010101010101010", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("00111110101010101010101010101010", &FLOAT32_LAYOUT, 4),
             "0.3333"
         );
         assert_eq!(
-            binary_to_decimal("00111110101010101010101010101011", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("00111110101010101010101010101011", &FLOAT32_LAYOUT, 4),
             "0.3333"
         );
         assert_eq!(
-            binary_to_decimal("00111111100000000000000000000001", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("00111111100000000000000000000001", &FLOAT32_LAYOUT, 4),
             "1"
         );
         assert_eq!(
-            binary_to_decimal("01001011011111111111111111111111", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("01001011011111111111111111111111", &FLOAT32_LAYOUT, 4),
             "16777215"
         );
         assert_eq!(
-            binary_to_decimal("01001011100000000000000000000000", FLOAT32_LAYOUT, 4),
+            binary_to_decimal("01001011100000000000000000000000", &FLOAT32_LAYOUT, 4),
             "16777216"
         );
     }
@@ -1019,111 +1223,113 @@ mod tests {
     #[test]
     fn test_special_values() {
         assert_eq!(
-            make_binary_zero(FLOAT32_LAYOUT, true).to_string(),
+            make_binary_zero(&FLOAT32_LAYOUT, true).to_string(),
             "00000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_zero(FLOAT32_LAYOUT, false).to_string(),
+            make_binary_zero(&FLOAT32_LAYOUT, false).to_string(),
             "10000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT32_LAYOUT, true).to_string(),
+            make_binary_infinity(&FLOAT32_LAYOUT, true).to_string(),
             "01111111100000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT32_LAYOUT, false).to_string(),
+            make_binary_infinity(&FLOAT32_LAYOUT, false).to_string(),
             "11111111100000000000000000000000"
         );
         assert_eq!(
-            make_binary_nan(FLOAT32_LAYOUT, false, 0).to_string(),
+            make_binary_nan(&FLOAT32_LAYOUT, false, BitField::new(0)).to_string(),
             "01111111110000000000000000000001"
         );
         assert_eq!(
             make_binary_special(
-                FLOAT32_LAYOUT,
+                &FLOAT32_LAYOUT,
                 SpecialValue::SmallestPositiveSubnormalNumber
             )
             .to_string(),
             "00000000000000000000000000000001"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestSubnormalNumber).to_string(),
+            make_binary_special(&FLOAT32_LAYOUT, SpecialValue::LargestSubnormalNumber).to_string(),
             "00000000011111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::SmallestPositiveNormalNumber)
+            make_binary_special(&FLOAT32_LAYOUT, SpecialValue::SmallestPositiveNormalNumber)
                 .to_string(),
             "00000000100000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestNormalNumber).to_string(),
+            make_binary_special(&FLOAT32_LAYOUT, SpecialValue::LargestNormalNumber).to_string(),
             "01111111011111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::LargestNumberLessThanOne).to_string(),
+            make_binary_special(&FLOAT32_LAYOUT, SpecialValue::LargestNumberLessThanOne)
+                .to_string(),
             "00111111011111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::One).to_string(),
+            make_binary_special(&FLOAT32_LAYOUT, SpecialValue::One).to_string(),
             "00111111100000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT32_LAYOUT, SpecialValue::SmallestNumberLargerThanOne)
+            make_binary_special(&FLOAT32_LAYOUT, SpecialValue::SmallestNumberLargerThanOne)
                 .to_string(),
             "00111111100000000000000000000001"
         );
 
         assert_eq!(
-            make_binary_zero(FLOAT64_LAYOUT, true).to_string(),
+            make_binary_zero(&FLOAT64_LAYOUT, true).to_string(),
             "0000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_zero(FLOAT64_LAYOUT, false).to_string(),
+            make_binary_zero(&FLOAT64_LAYOUT, false).to_string(),
             "1000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT64_LAYOUT, true).to_string(),
+            make_binary_infinity(&FLOAT64_LAYOUT, true).to_string(),
             "0111111111110000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_infinity(FLOAT64_LAYOUT, false).to_string(),
+            make_binary_infinity(&FLOAT64_LAYOUT, false).to_string(),
             "1111111111110000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_nan(FLOAT64_LAYOUT, false, 0).to_string(),
+            make_binary_nan(&FLOAT64_LAYOUT, false, BitField::new(0)).to_string(),
             "0111111111111000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
             make_binary_special(
-                FLOAT64_LAYOUT,
+                &FLOAT64_LAYOUT,
                 SpecialValue::SmallestPositiveSubnormalNumber
             )
             .to_string(),
             "0000000000000000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestSubnormalNumber).to_string(),
+            make_binary_special(&FLOAT64_LAYOUT, SpecialValue::LargestSubnormalNumber).to_string(),
             "0000000000001111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::SmallestPositiveNormalNumber)
+            make_binary_special(&FLOAT64_LAYOUT, SpecialValue::SmallestPositiveNormalNumber)
                 .to_string(),
             "0000000000010000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestNormalNumber).to_string(),
+            make_binary_special(&FLOAT64_LAYOUT, SpecialValue::LargestNormalNumber).to_string(),
             "0111111111101111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::LargestNumberLessThanOne).to_string(),
+            make_binary_special(&FLOAT64_LAYOUT, SpecialValue::LargestNumberLessThanOne)
+                .to_string(),
             "0011111111101111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::One).to_string(),
+            make_binary_special(&FLOAT64_LAYOUT, SpecialValue::One).to_string(),
             "0011111111110000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
-            make_binary_special(FLOAT64_LAYOUT, SpecialValue::SmallestNumberLargerThanOne)
+            make_binary_special(&FLOAT64_LAYOUT, SpecialValue::SmallestNumberLargerThanOne)
                 .to_string(),
             "0011111111110000000000000000000000000000000000000000000000000001"
         );

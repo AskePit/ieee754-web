@@ -1,25 +1,16 @@
 use core::ops::Add;
 use std::fmt::Display;
-use std::ops::{AddAssign, RangeBounds};
+use std::ops::{AddAssign, Bound, RangeBounds};
 
 pub enum ResizePolicy {
     AffectLowBits,
     AffectHighBits,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Default)]
 pub struct BitField {
     data: [u32; 8],
     size: usize,
-}
-
-impl Default for BitField {
-    fn default() -> Self {
-        BitField {
-            data: [0u32; 8],
-            size: 0,
-        }
-    }
 }
 
 impl Display for BitField {
@@ -268,11 +259,31 @@ impl BitField {
         self.all_bits_in_range_are(0..self.size, bit)
     }
 
+    fn process_external_range<R>(&self, range: R) -> (usize, usize)
+    where
+        R: RangeBounds<usize> + std::iter::Iterator<Item = usize>,
+    {
+        let start_index = match range.start_bound() {
+            Bound::Included(&v) => v,
+            Bound::Excluded(&v) => v + 1,
+            Bound::Unbounded => 0usize,
+        };
+        let end_index = match range.end_bound() {
+            Bound::Included(&v) => v,
+            Bound::Excluded(&v) => v - 1,
+            Bound::Unbounded => self.size - 1,
+        };
+
+        (start_index, end_index)
+    }
+
     pub fn all_bits_in_range_are<R>(&self, range: R, bit: bool) -> bool
     where
         R: RangeBounds<usize> + std::iter::Iterator<Item = usize>,
     {
-        for i in range {
+        let (start_index, end_index) = self.process_external_range(range);
+
+        for i in start_index..=end_index {
             if self.get_bit(i) != bit {
                 return false;
             }
@@ -289,7 +300,9 @@ impl BitField {
 
         let mut i: usize = 0;
 
-        for j in range {
+        let (start_index, end_index) = self.process_external_range(range);
+
+        for j in start_index..=end_index {
             res.set_bit_unchecked(i, self.get_bit(j));
             i += 1;
         }
