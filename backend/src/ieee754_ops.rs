@@ -1,6 +1,7 @@
 use crate::bitfield::{BitField, ResizePolicy};
 use rust_decimal::prelude::*;
 use std::cmp::PartialEq;
+use std::fmt::Write;
 use std::ops::MulAssign;
 
 pub struct FloatLayout {
@@ -610,9 +611,8 @@ pub fn is_binary_infinity(binary: BitField, layout: &FloatLayout) -> bool {
 }
 
 pub fn is_binary_quiet_nan(binary: BitField, layout: &FloatLayout) -> (bool, BitField) {
-    // x 11111111 1xxxxxxxxxxxxxxxxxxxxx1
-    let is_it = binary.get_bit(0) == true
-        && binary.get_bit(layout.get_mantissa_end_bit()) == true
+    // x 11111111 1xxxxxxxxxxxxxxxxxxxxxx
+    let is_it = binary.get_bit(layout.get_mantissa_end_bit()) == true
         && binary
             .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit())
             .all_bits_are(true);
@@ -620,7 +620,7 @@ pub fn is_binary_quiet_nan(binary: BitField, layout: &FloatLayout) -> (bool, Bit
     (
         is_it,
         if is_it {
-            binary.get_sub(1..=layout.get_mantissa_end_bit() - 1)
+            binary.get_sub(0..=layout.get_mantissa_end_bit() - 1)
         } else {
             BitField::new(0)
         },
@@ -628,9 +628,8 @@ pub fn is_binary_quiet_nan(binary: BitField, layout: &FloatLayout) -> (bool, Bit
 }
 
 pub fn is_binary_signaling_nan(binary: BitField, layout: &FloatLayout) -> (bool, BitField) {
-    // x 11111111 0xxxxxxxxxxxxxxxxxxxxx1
-    let is_it = binary.get_bit(0) == true
-        && binary.get_bit(layout.get_mantissa_end_bit()) == false
+    // x 11111111 0xxxxxxxxxxxxxxxxxxxxxx
+    let is_it = binary.get_bit(layout.get_mantissa_end_bit()) == false
         && binary
             .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit())
             .all_bits_are(true);
@@ -638,7 +637,7 @@ pub fn is_binary_signaling_nan(binary: BitField, layout: &FloatLayout) -> (bool,
     (
         is_it,
         if is_it {
-            binary.get_sub(1..=layout.get_mantissa_end_bit() - 1)
+            binary.get_sub(0..=layout.get_mantissa_end_bit() - 1)
         } else {
             BitField::new(0)
         },
@@ -896,6 +895,33 @@ pub fn decimal_to_binary(decimal: &str, layout: &FloatLayout) -> String {
     binary.to_string()
 }
 
+fn format_f64(value: f64, precision: u8) -> String {
+    let lower_threshold = 1e-20;
+    let upper_threshold = 1e20;
+
+    let mut result = String::new();
+
+    if value.abs() >= lower_threshold && value.abs() < upper_threshold {
+        // Use fixed-point notation with dynamically specified precision
+        write!(&mut result, "{:.*}", precision as usize, value).unwrap();
+    } else {
+        // Use scientific notation with 7 digits before the exponent
+        write!(&mut result, "{:.7e}", value).unwrap();
+    }
+
+    // Trim trailing zeros and a possible trailing decimal point
+    if result.contains('e') {
+        result = result.replace("e0", "e").replace(".0000000e", ".0e");
+    } else {
+        result = result
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+    }
+
+    result
+}
+
 pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> String {
     let b = BitField::parse_with_size(binary, layout.get_size()).unwrap();
 
@@ -940,9 +966,7 @@ pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> S
     // println!("{}\n", mantissa);
 
     let res: f64 = sign as f64 * 2f64.powi(exponent) * mantissa;
-    // res.to_string()
-    let dec = Decimal::from_f64(res).unwrap();
-    dec.round_dp(precision as u32).normalize().to_string()
+    format_f64(res, precision)
 }
 
 #[cfg(test)]
@@ -1170,6 +1194,14 @@ mod tests {
 
     #[test]
     fn test_binary32_to_decimal() {
+        assert_eq!(
+            binary_to_decimal("01111111000000000000000000000000", &FLOAT32_LAYOUT, 4),
+            "1.7014118e38"
+        );
+        assert_eq!(
+            binary_to_decimal("01111111110000000000000000000000", &FLOAT32_LAYOUT, 4),
+            "NaN"
+        );
         assert_eq!(
             binary_to_decimal("00000000000000000000000000000000", &FLOAT32_LAYOUT, 4),
             "0.0"
