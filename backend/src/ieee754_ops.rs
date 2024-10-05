@@ -108,10 +108,6 @@ impl FloatLayout {
         BitField::make_all_ones(self.get_sign_size())
     }
 
-    fn get_sign_bits(&self, val: u8) -> BitField {
-        BitField::make_u8(val, self.get_sign_size())
-    }
-
     fn get_zero_exponent_bits(&self) -> BitField {
         BitField::make_all_zeroes(self.get_exponent_size())
     }
@@ -475,12 +471,14 @@ pub fn make_binary_zero(layout: &FloatLayout, is_positive: bool) -> BitField {
     if is_positive || layout.is_unsigned() {
         BitField::make_all_zeroes(layout.get_size())
     } else {
-        layout.get_sign_bits(1) + layout.get_zero_exponent_bits() + layout.get_zero_mantissa_bits()
+        BitField::make_u8(1, layout.get_sign_size())
+            + layout.get_zero_exponent_bits()
+            + layout.get_zero_mantissa_bits()
     }
 }
 
 pub fn make_binary_infinity(layout: &FloatLayout, is_positive: bool) -> BitField {
-    layout.get_sign_bits(if is_positive { 0 } else { 1 })
+    BitField::make_u8(if is_positive { 0 } else { 1 }, layout.get_sign_size())
         + layout.get_one_exponent_bits()
         + layout.get_zero_mantissa_bits()
 }
@@ -776,6 +774,13 @@ pub fn is_binary_special(binary: BitField, layout: &FloatLayout) -> Option<Speci
     None
 }
 
+fn is_binary_denormalized(binary: BitField, layout: &FloatLayout) -> bool {
+    !is_binary_zero(binary, layout)
+        && binary
+            .get_sub(layout.get_exponent_start_bit()..=layout.get_exponent_end_bit())
+            .all_bits_are(false)
+}
+
 pub fn decimal_to_binary(decimal: &str, layout: &FloatLayout) -> String {
     let decimal = decimal.trim().to_lowercase();
 
@@ -922,21 +927,76 @@ fn format_f64(value: f64, precision: u8) -> String {
     result
 }
 
+pub struct BinaryInfo {
+    decimal: String,
+    is_positive: bool,
+    are_exponent_and_mantissa_valid: bool,
+    exponent: i32,
+    mantissa: f64,
+    is_denormalized: bool,
+    special_value: Option<SpecialValue>,
+}
+
+impl Default for BinaryInfo {
+    fn default() -> Self {
+        Self {
+            decimal: String::new(),
+            is_positive: true,
+            are_exponent_and_mantissa_valid: true,
+            exponent: 0,
+            mantissa: 0.0,
+            is_denormalized: false,
+            special_value: None,
+        }
+    }
+}
+
 pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> String {
+    binary_to_decimal_ext(binary, layout, precision).decimal
+}
+
+pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) -> BinaryInfo {
     let b = BitField::parse_with_size(binary, layout.get_size()).unwrap();
 
     // Special cases
-    if let Some(special) = is_binary_special(b, layout) {
-        let to_ret = match special {
-            SpecialValue::Zero(pos) => Some(if pos { "0.0" } else { "-0.0" }),
-            SpecialValue::Infinity(pos) => Some(if pos { "Infinity" } else { "-Infinity" }),
-            SpecialValue::Nan(_signaling, _payload) => Some("NaN"),
-            _ => None,
+    let special_value= is_binary_special(b, layout);
+    if let Some(special) = special_value {
+        match special {
+            SpecialValue::Zero(pos) => {
+                return BinaryInfo {
+                    decimal: if pos { "0.0" } else { "-0.0" }.to_string(),
+                    is_positive: pos,
+                    are_exponent_and_mantissa_valid: true,
+                    exponent: 0,
+                    mantissa: 0.0,
+                    is_denormalized: false,
+                    special_value: Some(special),
+                }
+            }
+            SpecialValue::Infinity(pos) => {
+                return BinaryInfo {
+                    decimal: if pos { "Infinity" } else { "-Infinity" }.to_string(),
+                    is_positive: pos,
+                    are_exponent_and_mantissa_valid: false,
+                    exponent: 0,
+                    mantissa: 0.0,
+                    is_denormalized: false,
+                    special_value: Some(special),
+                }
+            }
+            SpecialValue::Nan(_signaling, _payload) => {
+                return BinaryInfo {
+                    decimal: "NaN".to_string(),
+                    is_positive: false,
+                    are_exponent_and_mantissa_valid: false,
+                    exponent: 0,
+                    mantissa: 0.0,
+                    is_denormalized: false,
+                    special_value: Some(special),
+                }
+            }
+            _ => {}
         };
-
-        if let Some(ret) = to_ret {
-            return ret.to_string();
-        }
     }
 
     let sign = if b.get_bit(layout.get_sign_bit_unchecked()) {
@@ -950,9 +1010,14 @@ pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> S
     let mantissa_binary =
         b.get_sub(layout.get_mantissa_start_bit()..layout.get_mantissa_end_bit() + 1);
 
-    let exponent =
-        i32::from_str_radix(&exponent_binary.to_string(), 2).unwrap() - layout.exponent_bias as i32;
-    let mut mantissa = 1f64;
+    let is_denormalized = is_binary_denormalized(b, layout);
+
+    let exponent = if is_denormalized {
+        1 - layout.exponent_bias as i32
+    } else {
+        i32::from_str_radix(&exponent_binary.to_string(), 2).unwrap() - layout.exponent_bias as i32
+    };
+    let mut mantissa = if is_denormalized { 0f64 } else { 1f64 };
 
     for i in 0..mantissa_binary.size() {
         let bit = mantissa_binary.get_bit(mantissa_binary.size() - i - 1);
@@ -966,7 +1031,17 @@ pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> S
     // println!("{}\n", mantissa);
 
     let res: f64 = sign as f64 * 2f64.powi(exponent) * mantissa;
-    format_f64(res, precision)
+    let decimal = format_f64(res, precision);
+
+    BinaryInfo {
+        decimal,
+        is_positive: sign > 0,
+        are_exponent_and_mantissa_valid: true,
+        exponent,
+        mantissa,
+        is_denormalized,
+        special_value: is_binary_special(b, layout),
+    }
 }
 
 #[cfg(test)]
@@ -1365,5 +1440,30 @@ mod tests {
                 .to_string(),
             "0011111111110000000000000000000000000000000000000000000000000001"
         );
+    }
+
+    #[test]
+    fn test_denormalized_values() {
+        for l in vec![&FLOAT32_LAYOUT, &FLOAT64_LAYOUT, &FLOAT16_LAYOUT] {
+            for v in vec![
+                SpecialValue::LargestSubnormalNumber,
+                SpecialValue::SmallestPositiveSubnormalNumber,
+            ] {
+                assert!(is_binary_denormalized(make_binary_special(l, v), l));
+            }
+
+            for v in vec![
+                SpecialValue::Infinity(true),
+                SpecialValue::Infinity(false),
+                SpecialValue::LargestNormalNumber,
+                SpecialValue::Nan(false, BitField::new(0)),
+                SpecialValue::Nan(true, BitField::new(0)),
+                SpecialValue::LargestNumberLessThanOne,
+                SpecialValue::SmallestNumberLargerThanOne,
+                SpecialValue::SmallestPositiveNormalNumber,
+            ] {
+                assert!(!is_binary_denormalized(make_binary_special(l, v), l));
+            }
+        }
     }
 }
