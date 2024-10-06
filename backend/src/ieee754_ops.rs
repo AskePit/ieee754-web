@@ -3,6 +3,7 @@ use rust_decimal::prelude::*;
 use std::cmp::PartialEq;
 use std::fmt::Write;
 use std::ops::MulAssign;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 pub struct FloatLayout {
     sign: u8,
@@ -927,6 +928,7 @@ fn format_f64(value: f64, precision: u8) -> String {
     result
 }
 
+#[wasm_bindgen]
 pub struct BinaryInfo {
     decimal: String,
     is_positive: bool,
@@ -934,7 +936,6 @@ pub struct BinaryInfo {
     exponent: i32,
     mantissa: f64,
     is_denormalized: bool,
-    special_value: Option<SpecialValue>,
 }
 
 impl Default for BinaryInfo {
@@ -946,8 +947,40 @@ impl Default for BinaryInfo {
             exponent: 0,
             mantissa: 0.0,
             is_denormalized: false,
-            special_value: None,
         }
+    }
+}
+
+#[wasm_bindgen]
+impl BinaryInfo {
+    #[wasm_bindgen(getter)]
+    pub fn decimal(&self) -> String {
+        self.decimal.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn is_positive(&self) -> bool {
+        self.is_positive
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn are_exponent_and_mantissa_valid(&self) -> bool {
+        self.are_exponent_and_mantissa_valid
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn exponent(&self) -> i32 {
+        self.exponent
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn mantissa(&self) -> f64 {
+        self.mantissa
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn is_denormalized(&self) -> bool {
+        self.is_denormalized
     }
 }
 
@@ -959,7 +992,7 @@ pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) 
     let b = BitField::parse_with_size(binary, layout.get_size()).unwrap();
 
     // Special cases
-    let special_value= is_binary_special(b, layout);
+    let special_value = is_binary_special(b, layout);
     if let Some(special) = special_value {
         match special {
             SpecialValue::Zero(pos) => {
@@ -970,7 +1003,6 @@ pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) 
                     exponent: 0,
                     mantissa: 0.0,
                     is_denormalized: false,
-                    special_value: Some(special),
                 }
             }
             SpecialValue::Infinity(pos) => {
@@ -981,7 +1013,6 @@ pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) 
                     exponent: 0,
                     mantissa: 0.0,
                     is_denormalized: false,
-                    special_value: Some(special),
                 }
             }
             SpecialValue::Nan(_signaling, _payload) => {
@@ -992,7 +1023,6 @@ pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) 
                     exponent: 0,
                     mantissa: 0.0,
                     is_denormalized: false,
-                    special_value: Some(special),
                 }
             }
             _ => {}
@@ -1040,7 +1070,6 @@ pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) 
         exponent,
         mantissa,
         is_denormalized,
-        special_value: is_binary_special(b, layout),
     }
 }
 

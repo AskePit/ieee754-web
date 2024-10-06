@@ -1,4 +1,4 @@
-import init, { float32_to_binary, binary_to_float32 } from './ieee754_web.js';
+import init, { float32_to_binary, binary_to_float32, binary_to_float32_ext } from './ieee754_web.js';
 
 await init();
 
@@ -176,9 +176,18 @@ function SetBitsToCheckboxes(bits) {
 }
 
 function SetBitsToLabels(bits) {
-    signBitText.innerHTML = bits[0] == '1' ? '-' : '+'
+    const info = binary_to_float32_ext(bits)
+    signBitText.innerHTML = info.is_positive ? '+' : '-'
 
-    // TODO exponent and mantissa labels
+    if (info.are_exponent_and_mantissa_valid) {
+        exponentBitsText.innerHTML = '2<sup>' + info.exponent + '</sup>'
+        mantissaBitsText.innerHTML = info.mantissa
+    } else {
+        exponentBitsText.innerHTML = ''
+        mantissaBitsText.innerHTML = ''
+    }
+    
+    normalizedLabel.innerHTML = '<i>' + (info.is_denormalized ? 'denormalized' : 'normalized') + '</i>'
 }
 
 function GetBitsFromBin() {
