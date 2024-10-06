@@ -5,6 +5,7 @@ use std::fmt::Write;
 use std::ops::MulAssign;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen]
 pub struct FloatLayout {
     sign: u8,
     exponent: u8,
@@ -12,20 +13,35 @@ pub struct FloatLayout {
     exponent_bias: u32,
 }
 
+#[wasm_bindgen]
 impl FloatLayout {
-    const fn get_size(&self) -> usize {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sign: u8, exponent: u8, mantissa: u8, exponent_bias: u32) -> Self {
+        Self {
+            sign,
+            exponent,
+            mantissa,
+            exponent_bias,
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn get_size(&self) -> usize {
         self.get_end_bit() + 1
     }
 
-    const fn get_sign_size(&self) -> usize {
+    #[wasm_bindgen]
+    pub fn get_sign_size(&self) -> usize {
         self.sign as usize
     }
 
-    const fn get_exponent_size(&self) -> usize {
+    #[wasm_bindgen]
+    pub fn get_exponent_size(&self) -> usize {
         self.exponent as usize
     }
 
-    const fn get_mantissa_size(&self) -> usize {
+    #[wasm_bindgen]
+    pub fn get_mantissa_size(&self) -> usize {
         self.mantissa as usize
     }
 
@@ -188,6 +204,34 @@ pub const TENSOR_FLOAT32_LAYOUT: FloatLayout = FloatLayout {
     mantissa: 10,
     exponent_bias: 127,
 };
+
+#[wasm_bindgen]
+pub enum PredefinedLayout {
+    Float16,
+    Float32,
+    Float64,
+    Float128,
+    Float256,
+    Fp8E4M3,
+    Fp8E5M2,
+    BFloat16,
+    TensorFloat32,
+}
+
+#[wasm_bindgen]
+pub fn get_predefined_layout(layout_type: PredefinedLayout) -> FloatLayout {
+    match layout_type {
+        PredefinedLayout::Float16 => FLOAT16_LAYOUT,
+        PredefinedLayout::Float32 => FLOAT32_LAYOUT,
+        PredefinedLayout::Float64 => FLOAT64_LAYOUT,
+        PredefinedLayout::Float128 => FLOAT128_LAYOUT,
+        PredefinedLayout::Float256 => FLOAT256_LAYOUT,
+        PredefinedLayout::Fp8E4M3 => FP8_E4M3_LAYOUT,
+        PredefinedLayout::Fp8E5M2 => FP8_E5M2_LAYOUT,
+        PredefinedLayout::BFloat16 => BFLOAT16_LAYOUT,
+        PredefinedLayout::TensorFloat32 => TENSOR_FLOAT32_LAYOUT,
+    }
+}
 
 // 256 pows of 1/2
 // Yes, I know that f64 is not enough for such precision to handle all of 256 numbers properly.
@@ -782,6 +826,7 @@ fn is_binary_denormalized(binary: BitField, layout: &FloatLayout) -> bool {
             .all_bits_are(false)
 }
 
+#[wasm_bindgen]
 pub fn decimal_to_binary(decimal: &str, layout: &FloatLayout) -> String {
     let decimal = decimal.trim().to_lowercase();
 
@@ -984,10 +1029,12 @@ impl BinaryInfo {
     }
 }
 
+#[wasm_bindgen]
 pub fn binary_to_decimal(binary: &str, layout: &FloatLayout, precision: u8) -> String {
     binary_to_decimal_ext(binary, layout, precision).decimal
 }
 
+#[wasm_bindgen]
 pub fn binary_to_decimal_ext(binary: &str, layout: &FloatLayout, precision: u8) -> BinaryInfo {
     let b = BitField::parse_with_size(binary, layout.get_size()).unwrap();
 

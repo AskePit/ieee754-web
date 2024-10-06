@@ -17,14 +17,13 @@ function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
-
-let cachedDataViewMemory0 = null;
-
-function getDataViewMemory0() {
-    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
-        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
-    }
-    return cachedDataViewMemory0;
+/**
+* @param {PredefinedLayout} layout_type
+* @returns {FloatLayout}
+*/
+export function get_predefined_layout(layout_type) {
+    const ret = wasm.get_predefined_layout(layout_type);
+    return FloatLayout.__wrap(ret);
 }
 
 let WASM_VECTOR_LEN = 0;
@@ -82,6 +81,87 @@ function passStringToWasm0(arg, malloc, realloc) {
     WASM_VECTOR_LEN = offset;
     return ptr;
 }
+
+function _assertClass(instance, klass) {
+    if (!(instance instanceof klass)) {
+        throw new Error(`expected instance of ${klass.name}`);
+    }
+    return instance.ptr;
+}
+
+let cachedDataViewMemory0 = null;
+
+function getDataViewMemory0() {
+    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
+        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
+    }
+    return cachedDataViewMemory0;
+}
+/**
+* @param {string} decimal
+* @param {FloatLayout} layout
+* @returns {string}
+*/
+export function decimal_to_binary(decimal, layout) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(decimal, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        _assertClass(layout, FloatLayout);
+        wasm.decimal_to_binary(retptr, ptr0, len0, layout.__wbg_ptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred2_0 = r0;
+        deferred2_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+* @param {string} binary
+* @param {FloatLayout} layout
+* @param {number} precision
+* @returns {string}
+*/
+export function binary_to_decimal(binary, layout, precision) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(binary, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        _assertClass(layout, FloatLayout);
+        wasm.binary_to_decimal(retptr, ptr0, len0, layout.__wbg_ptr, precision);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred2_0 = r0;
+        deferred2_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+* @param {string} binary
+* @param {FloatLayout} layout
+* @param {number} precision
+* @returns {BinaryInfo}
+*/
+export function binary_to_decimal_ext(binary, layout, precision) {
+    const ptr0 = passStringToWasm0(binary, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    _assertClass(layout, FloatLayout);
+    const ret = wasm.binary_to_decimal_ext(ptr0, len0, layout.__wbg_ptr, precision);
+    return BinaryInfo.__wrap(ret);
+}
+
 /**
 * @param {string} float
 * @returns {string}
@@ -138,6 +218,10 @@ export function binary_to_float32_ext(binary) {
     const ret = wasm.binary_to_float32_ext(ptr0, len0);
     return BinaryInfo.__wrap(ret);
 }
+
+/**
+*/
+export const PredefinedLayout = Object.freeze({ Float16:0,"0":"Float16",Float32:1,"1":"Float32",Float64:2,"2":"Float64",Float128:3,"3":"Float128",Float256:4,"4":"Float256",Fp8E4M3:5,"5":"Fp8E4M3",Fp8E5M2:6,"6":"Fp8E5M2",BFloat16:7,"7":"BFloat16",TensorFloat32:8,"8":"TensorFloat32", });
 
 const BinaryInfoFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -218,6 +302,74 @@ export class BinaryInfo {
     get is_denormalized() {
         const ret = wasm.binaryinfo_is_denormalized(this.__wbg_ptr);
         return ret !== 0;
+    }
+}
+
+const FloatLayoutFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_floatlayout_free(ptr >>> 0, 1));
+/**
+*/
+export class FloatLayout {
+
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(FloatLayout.prototype);
+        obj.__wbg_ptr = ptr;
+        FloatLayoutFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        FloatLayoutFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_floatlayout_free(ptr, 0);
+    }
+    /**
+    * @param {number} sign
+    * @param {number} exponent
+    * @param {number} mantissa
+    * @param {number} exponent_bias
+    */
+    constructor(sign, exponent, mantissa, exponent_bias) {
+        const ret = wasm.floatlayout_new(sign, exponent, mantissa, exponent_bias);
+        this.__wbg_ptr = ret >>> 0;
+        FloatLayoutFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+    * @returns {number}
+    */
+    get_size() {
+        const ret = wasm.floatlayout_get_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+    * @returns {number}
+    */
+    get_sign_size() {
+        const ret = wasm.floatlayout_get_sign_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+    * @returns {number}
+    */
+    get_exponent_size() {
+        const ret = wasm.floatlayout_get_exponent_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+    * @returns {number}
+    */
+    get_mantissa_size() {
+        const ret = wasm.floatlayout_get_mantissa_size(this.__wbg_ptr);
+        return ret >>> 0;
     }
 }
 
