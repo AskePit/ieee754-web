@@ -1,6 +1,8 @@
-import init, { float32_to_binary, binary_to_float32, binary_to_float32_ext } from './ieee754_web.js';
+import init, { decimal_to_binary, binary_to_decimal, binary_to_decimal_ext, get_predefined_layout, PredefinedLayout } from './ieee754_web.js';
 
 await init();
+
+const DECIMAL_PRECISION = 20
 
 const decInputField = document.getElementById('dec-input-field')
 const binInputFields = document.getElementsByClassName('bin-input-field')
@@ -176,7 +178,7 @@ function SetBitsToCheckboxes(bits) {
 }
 
 function SetBitsToLabels(bits) {
-    const info = binary_to_float32_ext(bits)
+    const info = binary_to_decimal_ext(bits, get_predefined_layout(PredefinedLayout.Float32), DECIMAL_PRECISION)
     signBitText.innerHTML = info.is_positive ? '+' : '-'
 
     if (info.are_exponent_and_mantissa_valid) {
@@ -220,11 +222,11 @@ function SetBitsToHex(bits) {
 }
 
 function GetBitsFromDec() {
-    return float32_to_binary(decInputField.value)
+    return decimal_to_binary(decInputField.value, get_predefined_layout(PredefinedLayout.Float32))
 }
 
 function SetBitsToDec(bits) {
-    let val = binary_to_float32(bits).toString()
+    let val = binary_to_decimal(bits, get_predefined_layout(PredefinedLayout.Float32), DECIMAL_PRECISION)
     if (!val.includes('NaN') && !val.includes('Infinity')) {
         if (!val.includes('.') && !val.includes(',')) {
             val += '.0'
