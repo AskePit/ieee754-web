@@ -4,9 +4,10 @@ await init();
 
 const DECIMAL_PRECISION = 20
 
+const DEFALT_LAYOUT = get_predefined_layout(PredefinedLayout.Float32)
+let current_layout = DEFALT_LAYOUT
+
 const decInputField = document.getElementById('dec-input-field')
-const binInputFields = document.getElementsByClassName('bin-input-field')
-const hexInputFields = document.getElementsByClassName('hex-input-field')
 
 const copyDecButton = document.getElementById('button-copy-dec')
 const copyBinButton = document.getElementById('button-copy-bin')
@@ -16,15 +17,183 @@ const zeroButton = document.getElementById('button-zero')
 const infButton = document.getElementById('button-inf')
 const nanButton = document.getElementById('button-nan')
 
-const signBit = document.getElementById('sign-bit')
-const exponentBits = document.getElementsByClassName('exponent-bit')
-const mantissaBits = document.getElementsByClassName('mantissa-bit')
+const signCheckboxesRow = document.getElementById('sign-checkboxes-row')
+const exponentCheckboxesRow = document.getElementById('exponent-checkboxes-row')
+const mantissaCheckboxesRow = document.getElementById('mantissa-checkboxes-row')
+
+const binFieldsRow = document.getElementById('bin-fields-row')
+const hexFieldsRow = document.getElementById('hex-fields-row')
 
 const signBitText = document.getElementById('sign-bit-text')
 const exponentBitsText = document.getElementById('exponent-bits-text')
 const mantissaBitsText = document.getElementById('mantissa-bits-text')
 
 const normalizedLabel = document.getElementById('normalized-section')
+
+const layoutCombo = document.getElementById('layout-combo')
+
+layoutCombo.onchange = () => {
+    ChangeLayout(get_predefined_layout(PredefinedLayout[layoutCombo.value]))
+    SetThree()
+}
+
+function ChangeLayout(layout) {
+    current_layout = layout
+
+    // sign bit
+    {
+        let checkboxes = []
+
+        const N = layout.get_sign_size()
+
+        for(let i = 0; i < N; ++i) {
+            var checkbox = document.createElement("input")
+
+            checkbox.type = 'checkbox'
+            checkbox.id = 'sign-bit-' + N - 1 - i
+            checkbox.classList.add('sign-bit')
+
+            checkbox.onclick = () => {
+                SetDataFromCheckboxes()
+            }
+
+            checkboxes.push(checkbox)
+        }
+
+        signCheckboxesRow.replaceChildren(...checkboxes)
+    }
+
+    // exponent bits
+    {
+        let checkboxes = []
+
+        const N = layout.get_exponent_size()
+
+        for(let i = 0; i < N; ++i) {
+            var checkbox = document.createElement("input")
+
+            checkbox.type = 'checkbox'
+            checkbox.id = 'exponent-bit-' + N - 1 - i
+            checkbox.classList.add('exponent-bit')
+
+            checkbox.onclick = () => {
+                SetDataFromCheckboxes()
+            }
+
+            checkboxes.push(checkbox)
+        }
+
+        exponentCheckboxesRow.replaceChildren(...checkboxes)
+    }
+
+    // mantissa bits
+    {
+        let checkboxes = []
+
+        const N = layout.get_mantissa_size()
+
+        for(let i = 0; i < N; ++i) {
+            var checkbox = document.createElement("input")
+
+            checkbox.type = 'checkbox'
+            checkbox.id = 'mantissa-bit-' + N - 1 - i
+            checkbox.classList.add('mantissa-bit')
+
+            checkbox.onclick = () => {
+                SetDataFromCheckboxes()
+            }
+
+            checkboxes.push(checkbox)
+        }
+
+        mantissaCheckboxesRow.replaceChildren(...checkboxes)
+    }
+
+    // bin input fields
+    {
+        let fields = []
+
+        const N = layout.get_size() / 4
+
+        for(let i = 0; i < N; ++i) {
+            var field = document.createElement("input")
+
+            field.type = 'text'
+            field.id = 'bin-input-field-' + N
+            field.classList.add('bin-input-field')
+
+            // bin edit
+            field.oninput = () => {
+                let filtered = ''
+                for(let i = 0; i < 4; ++i) {
+                    const c = field.value[i]
+                    if (c >= '0' && c <= '1') {
+                        filtered += c
+                    }
+                }
+            
+                field.value = filtered
+            }
+
+            // bin submit
+            field.onchange = () => {
+                if (field.value.length < 4) {
+                    field.value = '0'.repeat(4 - field.value.length) + field.value
+                }
+                SetDataFromBin()
+            }
+
+            fields.push(field)
+        }
+
+        binFieldsRow.replaceChildren(...fields)
+    }
+
+    // hex input fields
+    {
+        let fields = []
+
+        const N = layout.get_size() / 16
+
+        for(let i = 0; i < N; ++i) {
+            var field = document.createElement("input")
+
+            field.type = 'text'
+            field.id = 'hex-input-field-' + N
+            field.classList.add('hex-input-field')
+
+            // hex edit
+            field.oninput = () => {
+                let filtered = ''
+                for(let i = 0; i<4; ++i) {
+                    const c = field.value[i]
+                    if (c >= '0' && c <= '9') {
+                        filtered += c
+                    } else if (c >= 'A' && c <= 'F') {
+                        filtered += c
+                    } else if (c >= 'a' && c <= 'f') {
+                        filtered += c
+                    }
+                }
+
+                field.value = filtered
+            }
+
+            // hex submit
+            field.onchange = () => {
+                if (field.value.length < 4) {
+                    field.value = '0'.repeat(4 - field.value.length) + field.value
+                }
+                field.value = field.value.toUpperCase()
+                SetDataFromHex()
+            }
+
+            fields.push(field)
+        }
+
+        hexFieldsRow.replaceChildren(...fields)
+    }
+}
 
 // dec edit
 decInputField.oninput = () => {
@@ -56,57 +225,6 @@ decInputField.onchange = () => {
     SetDataFromDec()
 }
 
-for(let binInputField of binInputFields) {
-    // bin edit
-    binInputField.oninput = () => {
-        let filtered = ''
-        for(let i = 0; i<4; ++i) {
-            const c = binInputField.value[i]
-            if (c >= '0' && c <= '1') {
-                filtered += c
-            }
-        }
-    
-        binInputField.value = filtered
-    }
-
-    // bin submit
-    binInputField.onchange = () => {
-        if (binInputField.value.length < 4) {
-            binInputField.value = '0'.repeat(4 - binInputField.value.length) + binInputField.value
-        }
-        SetDataFromBin()
-    }
-}
-
-for(let hexInputField of hexInputFields) {
-    // hex edit
-    hexInputField.oninput = () => {
-        let filtered = ''
-        for(let i = 0; i<4; ++i) {
-            const c = hexInputField.value[i]
-            if (c >= '0' && c <= '9') {
-                filtered += c
-            } else if (c >= 'A' && c <= 'F') {
-                filtered += c
-            } else if (c >= 'a' && c <= 'f') {
-                filtered += c
-            }
-        }
-
-        hexInputField.value = filtered
-    }
-
-    // hex submit
-    hexInputField.onchange = () => {
-        if (hexInputField.value.length < 4) {
-            hexInputField.value = '0'.repeat(4 - hexInputField.value.length) + hexInputField.value
-        }
-        hexInputField.value = hexInputField.value.toUpperCase()
-        SetDataFromHex()
-    }
-}
-
 copyDecButton.onclick = () => {
     navigator.clipboard.writeText(decInputField.value)
 }
@@ -131,54 +249,34 @@ nanButton.onclick = () => {
     SetNan()
 }
 
-signBit.onclick = () => {
-    SetDataFromCheckboxes()
-}
-
-for (let i = 0; i<exponentBits.length; ++i) {
-    const exponentBit = exponentBits[i]
-    exponentBit.onclick = () => {
-        SetDataFromCheckboxes()
-    }
-}
-
-for (let i = 0; i<mantissaBits.length; ++i) {
-    const mantissaBit = mantissaBits[i]
-    mantissaBit.onclick = () => {
-        SetDataFromCheckboxes()
-    }
-}
-
 function GetBitsFromCheckboxes() {
-    let bits = signBit.checked ? '1' : '0'
+    let bits = ''
 
-    for (const exponentBit of exponentBits) {
-        bits += exponentBit.checked ? '1' : '0'
-    }
-
-    for (const mantissaBit of mantissaBits) {
-        bits += mantissaBit.checked ? '1' : '0'
+    for (let div of [signCheckboxesRow, exponentCheckboxesRow, mantissaCheckboxesRow]) {
+        for(let bit of Array.from(div.children)) {
+            bits += bit.checked ? '1' : '0'
+        }
     }
 
     return bits
 }
 
 function SetBitsToCheckboxes(bits) {
-    signBit.checked = bits[0] == '1'
+    let offset = 0
 
-    for (let i = 0; i<exponentBits.length; ++i) {
-        const exponentBit = exponentBits[i]
-        exponentBit.checked = bits[i + 1] == '1'
-    }
+    for (let div of [signCheckboxesRow, exponentCheckboxesRow, mantissaCheckboxesRow]) {
+        let checkboxes = Array.from(div.children)
 
-    for (let i = 0; i<mantissaBits.length; ++i) {
-        const mantissaBit = mantissaBits[i]
-        mantissaBit.checked = bits[i + 1 + 8] == '1'
+        for(let i = 0; i<checkboxes.length; ++i) {
+            let checkbox = checkboxes[i]
+            checkbox.checked = bits[offset] == '1'
+            ++offset
+        }
     }
 }
 
 function SetBitsToLabels(bits) {
-    const info = binary_to_decimal_ext(bits, get_predefined_layout(PredefinedLayout.Float32), DECIMAL_PRECISION)
+    const info = binary_to_decimal_ext(bits, current_layout, DECIMAL_PRECISION)
     signBitText.innerHTML = info.is_positive ? '+' : '-'
 
     if (info.are_exponent_and_mantissa_valid) {
@@ -195,7 +293,7 @@ function SetBitsToLabels(bits) {
 function GetBitsFromBin() {
     let bits = ''
 
-    for (const binInputField of binInputFields) {
+    for (const binInputField of Array.from(binFieldsRow.children)) {
         bits += binInputField.value
     }
     
@@ -203,30 +301,39 @@ function GetBitsFromBin() {
 }
 
 function SetBitsToBin(bits) {
-    for (let i = 0; i<8; ++i) {
-        binInputFields[i].value = bits.slice(i*4, i*4 + 4)
+    let fields = Array.from(binFieldsRow.children)
+
+    for (let i = 0; i < fields.length; ++i) {
+        fields[i].value = bits.slice(i*4, i*4 + 4)
     }
 }
 
 function GetBitsFromHex() {
-    let hex = hexInputFields[0].value + hexInputFields[1].value
+    let hex = ''
+
+    for (const hexInputField of Array.from(hexFieldsRow.children)) {
+        hex += hexInputField.value
+    }
+
     return hex2bin(hex)
 }
 
 function SetBitsToHex(bits) {
     let hex = bin2hex(bits)
 
-    for (let i = 0; i<2; ++i) {
-        hexInputFields[i].value = hex.slice(i*4, i*4 + 4).toUpperCase()
+    let fields = Array.from(hexFieldsRow.children)
+
+    for (let i = 0; i < fields.length; ++i) {
+        fields[i].value = hex.slice(i*4, i*4 + 4).toUpperCase()
     }
 }
 
 function GetBitsFromDec() {
-    return decimal_to_binary(decInputField.value, get_predefined_layout(PredefinedLayout.Float32))
+    return decimal_to_binary(decInputField.value, current_layout)
 }
 
 function SetBitsToDec(bits) {
-    let val = binary_to_decimal(bits, get_predefined_layout(PredefinedLayout.Float32), DECIMAL_PRECISION)
+    let val = binary_to_decimal(bits, current_layout, DECIMAL_PRECISION)
     if (!val.includes('NaN') && !val.includes('Infinity')) {
         if (!val.includes('.') && !val.includes(',')) {
             val += '.0'
@@ -236,11 +343,11 @@ function SetBitsToDec(bits) {
 }
 
 function hex2bin(hex) {
-    return (parseInt(hex, 16).toString(2)).padStart(32, '0');
+    return (parseInt(hex, 16).toString(2)).padStart(current_layout.get_size(), '0');
 }
 
 function bin2hex(bin) {
-    return (parseInt(bin, 2).toString(16)).padStart(8, '0');
+    return (parseInt(bin, 2).toString(16)).padStart(current_layout.get_size() / 4, '0');
 }
 
 function SetData(bits, setFunctionsList) {
@@ -296,15 +403,34 @@ function SetDataFromHex() {
 }
 
 function SetZero() {
-    SetAllData('00000000000000000000000000000000')
+    let bin = '0'.repeat(current_layout.get_size())
+    SetAllData(bin)
 }
 
 function SetInf() {
-    SetAllData('01111111100000000000000000000000')
+    let bin = '0'.repeat(current_layout.get_sign_size()) + '1'.repeat(current_layout.get_exponent_size()) + '0'.repeat(current_layout.get_mantissa_size())
+    SetAllData(bin)
 }
 
 function SetNan() {
-    SetAllData('01111111110000000000000000000001')
+    let bin = '0'.repeat(current_layout.get_sign_size()) + '1'.repeat(current_layout.get_exponent_size() + 1) + '0'.repeat(current_layout.get_mantissa_size() - 1)
+    SetAllData(bin)
 }
 
-SetAllData('00111111100000000000000000000000')
+function SetOne() {
+    let bin = '0'.repeat(current_layout.get_sign_size() + 1) + '1'.repeat(current_layout.get_exponent_size() - 1) + '0'.repeat(current_layout.get_mantissa_size())
+    SetAllData(bin)
+}
+
+function SetTwo() {
+    let bin = '0'.repeat(current_layout.get_sign_size()) + '1' + '0'.repeat(current_layout.get_exponent_size() - 1) + '0'.repeat(current_layout.get_mantissa_size())
+    SetAllData(bin)
+}
+
+function SetThree() {
+    let bin = '0'.repeat(current_layout.get_sign_size()) + '1' + '0'.repeat(current_layout.get_exponent_size() - 1) + '1' + '0'.repeat(current_layout.get_mantissa_size() - 1)
+    SetAllData(bin)
+}
+
+ChangeLayout(DEFALT_LAYOUT)
+SetThree()

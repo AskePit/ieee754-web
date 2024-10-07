@@ -38,8 +38,9 @@
     justify-content: space-around;
 }
 
-#input-fields-row-flow {
+.input-fields-row-flow {
     display: flex;
     flex-direction: row;
     align-content: stretch;
+    /* flex-wrap: wrap; */
 }

@@ -52,8 +52,9 @@ input[type="text"] {
 .checkboxes-row {
     display: flex;
     flex-direction: row;
-    justify-content: space-around;
+    justify-content: start;
     gap: 3px;
+    flex-wrap: wrap;
 }
 
 .checkboxes-row input[type="checkbox"] {
