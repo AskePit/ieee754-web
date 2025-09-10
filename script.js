@@ -37,6 +37,13 @@ layoutCombo.onchange = () => {
     SetThree()
 }
 
+function CreateFiller() {
+    var filler = document.createElement("div")
+    filler.style.flexBasis = "100%"
+    filler.style.height = "0"
+    return filler
+}
+
 function ChangeLayout(layout) {
     current_layout = layout
 

@@ -14,13 +14,14 @@
 </head>
 <body>
     <center>
+    <p id="title">IEEE-754 Calculator</p>
     <div id="main-flow">
         <div id="upper-flow">
             <div id="input-fields-flow">
                 <div id="dec-fields-row" class="input-fields-row-flow">
                     <input id="dec-input-field" type="text" value="1.0">
                 </div>
-                <div id="bin-fields-row" class="input-fields-row-flow">
+                <div id="bin-fields-row" class="input-fields-row-flow bin-input-fields-row-flow">
                     <!-- DYNAMIC CONTENT -->
                     <!-- <input id="bin-input-field-0" class="bin-input-field" type="text" value="0011">
                     <input id="bin-input-field-1" class="bin-input-field" type="text" value="1111">
@@ -31,7 +32,7 @@
                     <input id="bin-input-field-6" class="bin-input-field" type="text" value="0000">
                     <input id="bin-input-field-7" class="bin-input-field" type="text" value="0000"> -->
                 </div>
-                <div id="hex-fields-row" class="input-fields-row-flow">
+                <div id="hex-fields-row" class="input-fields-row-flow hex-input-fields-row-flow">
                     <!-- DYNAMIC CONTENT -->
                     <!-- <input id="hex-input-field-0" class="hex-input-field" type="text" value="3F80">
                     <input id="hex-input-field-1" class="hex-input-field" type="text" value="0000"> -->
@@ -119,7 +120,7 @@
         <option value="Float32" selected>Float32</option>
         <option value="Float64">Float64</option>
         <option value="Float128">Float128</option>
-        <option value="Float256">Float256</option>
+        <!-- <option value="Float256">Float256</option> -->
 
         <option value="Fp8E4M3">FP8 E4M3</option>
         <option value="Fp8E5M2">FP8 E5M2</option>
