@@ -32,26 +32,28 @@
 #input-fields-flow {
     display: flex;
     flex-direction: column;
-    justify-content: space-around;
+    justify-content: space-between;
     gap: 8px;
 }
 
 #copy-buttons-flow {
     display: flex;
     flex-direction: column;
-    justify-content: space-around;
+    justify-content: space-between;
+    gap: 8px;
 }
 
-.input-fields-row-flow {
+.dec-input-fields-row-flow {
     display: flex;
-    flex-direction: row;
-    align-content: stretch;
-    /* flex-wrap: wrap; */
+    grid-template-columns: repeat(1, auto);
 }
 
 .bin-input-fields-row-flow {
     display: grid;
-    align-content: stretch;
     grid-template-columns: repeat(8, auto);
-    width: 99%;
+}
+
+.hex-input-fields-row-flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12.5%, 1fr));
 }

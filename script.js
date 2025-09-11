@@ -126,7 +126,7 @@ function ChangeLayout(layout) {
             var field = document.createElement("input")
 
             field.type = 'text'
-            field.id = 'bin-input-field-' + N
+            field.id = 'bin-input-field-' + i
             field.classList.add('bin-input-field')
 
             // bin edit
@@ -166,7 +166,7 @@ function ChangeLayout(layout) {
             var field = document.createElement("input")
 
             field.type = 'text'
-            field.id = 'hex-input-field-' + N
+            field.id = 'hex-input-field-' + i
             field.classList.add('hex-input-field')
 
             // hex edit
